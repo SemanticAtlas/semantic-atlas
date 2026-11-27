@@ -160,6 +160,7 @@ No measure is implemented yet. The planned measures and their acceptance thresho
 | D10 | Mobile | Lecture de l'instantané, recherche BM25 + expansion par vecteurs, pas de modèle local par défaut | Modèle local opt-in (tablettes) |
 | D11 | Vue « Relations » | Nouvelle vue du graphe des liens, partageant modèle, physique et rendu avec Explorer | Préréglage d'Explorer |
 | D12 | Distribution du cœur | npm `@semanticatlas/core` (portée à réserver), versions 0.x semver | Dépendance Git |
+| D13 | Langage du calcul (décidé le 2026-11-27) | **Rust**, crate `semantic-atlas-engine` compilé en WebAssembly (bureau, mobile, progressive-web-office) et en natif (futurs outils) ; TypeScript pour le contrat, les adaptateurs, le rendu, les workers et l'interface | Tout en TypeScript |
 
 Le détail, les conséquences et les replis figurent en section 6.
 
@@ -253,7 +254,8 @@ La documentation officielle l'emporte. « Prompt » désigne le cahier des charg
 |---|---|---|---|
 | `.github` | Profil et fichiers communs | `profile/README.md` (vitrine de l'organisation), `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, modèles d'issues et de PR hérités par tous les dépôts | MIT / CC-BY-4.0 pour les textes |
 | `semanticatlas.github.io` | Site public | Présentation, documentation agrégée des dépôts (VitePress, comme progressive-web-office), **`llms.txt` et `llms-full.txt`** générés depuis les `docs/`, captures, page « Confidentialité » | MIT (code), CC-BY-4.0 (textes) |
-| `semantic-atlas-core` | Cœur partagé | Paquet `@semanticatlas/core` : modèle, index pur, embeddings (worker), recherche, analyse, projections, physique, rendu. Aucune dépendance à Obsidian ni à un framework. | MIT |
+| `semantic-atlas-engine` | Moteur de calcul en Rust | Crate `semantic-atlas-engine` (graphes CSR, kNN et HNSW, Leiden et consensus, centralités, t-SNE, UMAP et PaCMAP, physique Barnes-Hut, inférence d'embeddings), module WebAssembly en ABI C simple, paquet npm `@semanticatlas/engine` (chargeur TypeScript) | MIT |
+| `semantic-atlas-core` | Cœur partagé (TypeScript) | Paquet `@semanticatlas/core` : modèle, index pur, embeddings (worker), recherche, analyse, projections, physique, rendu. Aucune dépendance à Obsidian ni à un framework. | MIT |
 | `semantic-atlas` (ce dépôt) | Extension Obsidian | Adaptateur Obsidian, vues, commandes, réglages, i18n, stockage, intégration du cœur dans un seul `main.js` | MIT |
 | `semantic-atlas-pwo` | Composant pour progressive-web-office | Adaptateur `NoteVault` vers le format neutre, éléments personnalisés (`<sa-map>`, `<sa-related>`, `<sa-relations>`) consommés par progressive-web-office | MIT |
 
@@ -268,6 +270,11 @@ Coût accepté : changer le cœur et l'extension en même temps demande deux PR.
 Un sixième dépôt `semantic-atlas-agent` (CLI ou serveur MCP pour interroger l'atlas d'un vault hors d'Obsidian) est possible plus tard, sur le même cœur. Il n'est pas demandé aujourd'hui.
 
 ### 4.2 Modules
+
+> **Décision D13 (2026-11-27)** : tout le calcul lourd passe dans le moteur Rust `semantic-atlas-engine`. Dans l'arborescence ci-dessous, `analysis/`, `layout/`, `physics/`, la partie numérique de `search/` (kNN, HNSW) et `embed/` (inférence) deviennent des modules du crate Rust. Le cœur TypeScript les appelle à travers le module WebAssembly, depuis ses workers. Il garde le contrat d'entrée, l'indexation du texte, BM25, le rendu, le stockage et l'orchestration. Le graphe CSR et le générateur aléatoire existent déjà en Rust, avec des sorties identiques à la version TypeScript (tests croisés).
+>
+> Frontière TypeScript–WebAssembly : ABI C simple (`docs/ABI.md` du moteur), sans code de liaison généré. Les tableaux typés sont copiés dans la mémoire du module, et les résultats restent derrière des poignées. Le module n'importe rien, donc il fonctionne hors ligne et sous une CSP stricte (`'wasm-unsafe-eval'`). Son build est reproductible : deux builds propres donnent les mêmes octets. Au 2026-11-27, il pèse 42 Ko (16 Ko compressé).
+
 
 ```
 semantic-atlas-core/src/
@@ -356,6 +363,8 @@ Chaque résultat est mis en cache sous une clé égale à l'empreinte de ses ent
 ---
 
 ## 5. Bibliothèques candidates et choix par brique
+
+Depuis D13, les briques notées « maison » ci-dessous sont écrites en **Rust** dans `semantic-atlas-engine`, sauf BM25, la segmentation et le rendu, qui restent en TypeScript. Les oracles de test restent les mêmes : bibliothèques JS ou Python en développement, comparées au moteur par des tests croisés.
 
 Règle générale : **peu de dépendances d'exécution**. Les bibliothèques de référence servent d'**oracles de test** (`devDependencies`), pas de code livré, quand il faut des garanties impossibles à obtenir d'elles : graine, démarrage à chaud, tableaux typés, connexité.
 
