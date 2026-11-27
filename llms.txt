@@ -1,0 +1,11 @@
+# Semantic Atlas
+
+> Obsidian community plugin that maps a vault by meaning: related notes, semantic search, themes, bridges between topics, missing links, and a comparison of the structure built by hand with the one meaning reveals. Computed on the device.
+
+## Documentation
+
+- [Semantic Atlas](https://github.com/SemanticAtlas/semantic-atlas/blob/main/README.md): Map your Obsidian vault by meaning, not only by links:
+- [Changelog](https://github.com/SemanticAtlas/semantic-atlas/blob/main/CHANGELOG.md): All notable changes to this project are documented in this file.
+- [Architecture](https://github.com/SemanticAtlas/semantic-atlas/blob/main/docs/ARCHITECTURE.md): This page describes the code as it is. The target architecture is in [SPEC.md, section 4](SPEC.md#4-organisation-des-dépôts-et-architecture).
+- [Metrics](https://github.com/SemanticAtlas/semantic-atlas/blob/main/docs/METRICS.md): Every measure shown by Semantic Atlas has an entry here: definition, layer used, complexity, validity limit and reference. A measure without an entry must not be displayed.
+- [Semantic Atlas — spécification de phase 0](https://github.com/SemanticAtlas/semantic-atlas/blob/main/docs/SPEC.md): 1. [Décisions à valider (résumé)](#1-décisions-à-valider-résumé)

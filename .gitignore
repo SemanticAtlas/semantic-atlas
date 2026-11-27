@@ -1,0 +1,36 @@
+# gitallow: ignore everything, then allow explicitly what belongs to the repository.
+*
+!*/
+
+# Repository files
+!/.gitignore
+!/.editorconfig
+!/.npmrc
+!/README.md
+!/CHANGELOG.md
+!/LICENSE
+!/upstream-bugs.md
+!/llms.txt
+!/llms-full.txt
+!/justfile
+
+# Obsidian plugin files (main.js is a build output, shipped only as a release asset)
+!/manifest.json
+!/versions.json
+!/styles.css
+
+# Build, lint and test configuration
+!/package.json
+!/package-lock.json
+!/tsconfig.json
+!/esbuild.config.mjs
+!/eslint.config.mts
+!/vitest.config.ts
+!/version-bump.mjs
+
+# Sources, tests, scripts, documentation, CI
+!/src/**
+!/tests/**
+!/scripts/**
+!/docs/**
+!/.github/**

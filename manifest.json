@@ -1,0 +1,10 @@
+{
+	"id": "semantic-atlas",
+	"name": "Semantic Atlas",
+	"version": "0.1.0",
+	"minAppVersion": "1.11.4",
+	"description": "Map your vault by meaning: related notes, semantic search, themes, bridges between topics and missing links, computed on your device.",
+	"author": "Sébastien Celles",
+	"authorUrl": "https://github.com/s-celles",
+	"isDesktopOnly": false
+}

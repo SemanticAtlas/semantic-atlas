@@ -1,0 +1,49 @@
+{
+	"name": "semantic-atlas",
+	"version": "0.1.0",
+	"description": "Map your vault by meaning: related notes, semantic search, themes, bridges between topics and missing links, computed on your device.",
+	"private": true,
+	"type": "module",
+	"main": "main.js",
+	"license": "MIT",
+	"author": "Sébastien Celles (https://github.com/s-celles)",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/SemanticAtlas/semantic-atlas.git"
+	},
+	"engines": {
+		"node": ">=22.12"
+	},
+	"scripts": {
+		"dev": "node esbuild.config.mjs",
+		"build": "tsc --noEmit && node esbuild.config.mjs production",
+		"typecheck": "tsc --noEmit",
+		"lint": "eslint .",
+		"test": "vitest run",
+		"test:watch": "vitest",
+		"check:size": "node scripts/check-bundle-size.mjs",
+		"check:reproducible": "node scripts/check-reproducible.mjs",
+		"docs:llms": "node scripts/build-llms.mjs",
+		"version": "node version-bump.mjs && git add manifest.json versions.json"
+	},
+	"keywords": [
+		"obsidian",
+		"semantic-search",
+		"embeddings",
+		"knowledge-graph"
+	],
+	"devDependencies": {
+		"@eslint/js": "9.39.5",
+		"@types/node": "22.20.7",
+		"esbuild": "0.28.2",
+		"eslint": "9.39.5",
+		"eslint-plugin-obsidianmd": "0.6.0",
+		"fast-check": "4.11.0",
+		"globals": "17.14.0",
+		"jiti": "2.7.0",
+		"obsidian": "1.14.4",
+		"typescript": "6.0.3",
+		"typescript-eslint": "8.74.0",
+		"vitest": "5.1.2"
+	}
+}
