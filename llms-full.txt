@@ -151,8 +151,8 @@ No measure is implemented yet. The planned measures and their acceptance thresho
 | D1 | Nom et identifiant | **Semantic Atlas**, `semantic-atlas` (libre dans l'annuaire au 2026-11-27) | — |
 | D2 | Licence | **MIT** pour tous les dépôts de l'organisation | Apache-2.0 (clause de brevets) |
 | D3 | Dépôts (créés le 2026-11-27) | Organisation `SemanticAtlas` à 5 dépôts : `.github`, `semanticatlas.github.io`, `semantic-atlas-core`, `semantic-atlas` (extension), `semantic-atlas-pwo` | Monodépôt unique |
-| D4 | Moteur d'inférence | **ONNX Runtime Web compilé avec les seuls opérateurs du modèle, intégré à `main.js`** ; seules les données du modèle se téléchargent | Moteur maison TS + WASM (repli) |
-| D5 | Modèle par défaut | **granite-embedding-97m-multilingual-r2** (Apache-2.0, 384 d, sans préfixe), sous réserve du banc d'essai S2 | multilingual-e5-small (MIT, préfixes) |
+| D4 | Moteur d'inférence (spike S1 fait le 2026-11-28) | **Candle (Rust) dans `semantic-atlas-engine`**, avec nos encodeurs BERT et ModernBERT et des poids Q8_0 convertis par nous ; seules les données du modèle se téléchargent | ONNX Runtime « minimal » réduit (mesuré, repli documenté) |
+| D5 | Modèle par défaut | **granite-embedding-97m-multilingual-r2 en Q8_0 maison** (Apache-2.0, 384 d, sans préfixe, 103,6 Mo), sous réserve du banc de qualité S2 ; l'export int8 ONNX publié est exclu (cosinus 0,93 contre fp32) | multilingual-e5-small en Q8_0 maison (MIT, préfixes, 125,8 Mo) |
 | D6 | Téléchargement du modèle | Consentement explicite, révision Hugging Face figée, SHA-256 vérifié, téléchargement par tranches `Range`, import manuel hors ligne, jamais de mise à jour silencieuse | — |
 | D7 | Stockage de l'index | **IndexedDB local à l'appareil** + **instantané optionnel** en éclats ≤ 4 Mo dans un dossier visible du vault | Dossier de l'extension (rejeté) |
 | D8 | `minAppVersion` | **1.11.4** (`SecretStorage`) | 1.13.0 (réglages déclaratifs) |
@@ -441,6 +441,34 @@ Paramètres d'exécution :
 - Le parallélisme vient de **plusieurs workers** : 2 par défaut sur bureau, réglable de 1 à 4.
 - WebGPU est écarté en v1 : son WASM fait 29,5 Mo, ce qui est incompatible avec l'option b. Il pourra être réévalué plus tard.
 
+### 6.4 bis Résultats du spike S1 (2026-11-28)
+
+Rapports complets : `semantic-atlas-core/spikes/s1-inference/{candle,ort-reduced}/REPORT.md`. Les vitesses ci-dessous ont été remesurées sur machine calme (charge 1,7 à 2,5, Intel Pentium Gold 8505, un cœur, Node 24, SIMD WebAssembly).
+
+| | Candle (Rust), notre encodeur | ONNX Runtime « minimal », Release |
+|---|---|---|
+| WASM compressé (gzip) | **274 Ko** | 850 Ko |
+| Part dans `main.js` (base64) | ~0,4 Mo | ~1,2 Mo |
+| Exactitude, poids fp32 | cosinus ≥ 0,9999999999993 | cosinus ≥ 0,9999999999996 |
+| Exactitude des poids ~100 Mo | **Q8_0 maison : ≥ 0,99987** (granite), ≥ 0,99993 (e5) | int8 ONNX publié : **0,9277** (granite), 0,9936 (e5) |
+| Vitesse, granite (jetons/s, un cœur) | ~280 à 300 | ~680 (calcul int8, celui qui perd l'exactitude) |
+| Vitesse, e5 (jetons/s) | ~310 à 360 | ~840 |
+| Bloc de 512 jetons | 1,6 à 2,0 s | 0,7 à 0,8 s |
+| Mémoire du module (poids Q8_0) | 270 Mo (granite), 316 Mo (e5) | RSS 670 à 830 Mo pour le processus |
+| Build reproductible | oui | oui (après correction des chemins absolus) |
+| Chaîne de build | Rust (déjà le langage du moteur) | Emscripten + ONNX Runtime C++ (20 min, quatre correctifs, dépôt Microsoft injoignable le 2026-11-27) |
+| Modèles | GGUF Q8_0 convertis par nous | fichiers `.ort` convertis par nous |
+
+**Décision.** Candle, intégré au moteur Rust :
+- il est trois fois plus petit et reste exact ;
+- il est le seul à rendre granite utilisable à environ 100 Mo ;
+- il garde une seule chaîne de build, celle du moteur (D13).
+
+**Ce qui reste à faire** :
+- **Vitesse.** Écrire un noyau de multiplication Q8_0 × Q8 en SIMD WebAssembly dans le moteur. Le Q8_0 complet de Candle est exact (≥ 0,9997) mais 1,5 à 2,5 fois plus lent que le f32, faute de noyau optimisé pour WebAssembly. Cible : ≥ 700 jetons/s par cœur, soit la vitesse d'ONNX Runtime avec l'exactitude du Q8_0.
+- **Hébergement des fichiers Q8_0** : nos conversions doivent être publiées avec une empreinte figée (voir D6).
+- **Repli.** Si le noyau n'atteint pas la cible, la build ONNX Runtime « minimal » reste documentée et mesurée.
+
 ### 6.5 D5 — Modèle par défaut
 
 | | granite-embedding-97m-multilingual-r2 | multilingual-e5-small |
@@ -577,7 +605,7 @@ Voir 2.1. Elle arrive en **phase 5** avec la physique 2D. Son équivalent en tab
 **Hypothèses (estimation)** :
 
 - note moyenne de 2 blocs de 256 jetons ;
-- environ 150 ms par bloc et par worker (WASM SIMD, int8, un fil) ;
+- ~~environ 150 ms par bloc et par worker~~ : **mesuré en S1, environ 0,9 s par bloc de 256 jetons et par worker** (Candle, un cœur, Pentium Gold 8505). L'estimation initiale était trop optimiste d'un facteur 5 à 6 ;
 - 2 workers d'embeddings ;
 - graphe kNN ≤ 15·n arêtes avant symétrisation.
 
@@ -589,7 +617,7 @@ Les valeurs ci-dessous sont des **ordres de grandeur** à remplacer par les mesu
 |---|---|---|---|---|
 | Lecture (`cachedRead`) + conversion | 1 s | 5 s | 20 s | fil principal, tranches ≤ 8 ms |
 | Nettoyage, découpage, empreintes, BM25 | 1 s | 5 s | 20 s | worker texte |
-| **Embeddings, première indexation** | **~3 min** | **~13 min** | **~50 min** | 2 workers ; interruptible, reprend où il s'est arrêté |
+| **Embeddings, première indexation (mesuré S1, avant optimisation du noyau)** | **~15 min** | **~1 h 15** | **~5 h** | 2 workers à ~290 jetons/s chacun (Candle, granite, machine de mesure peu puissante). Avec le noyau Q8_0 visé (≥ 700 jetons/s) : ~6 min, ~30 min, ~2 h. Interruptible, reprend où il s'est arrêté ; note active et notes récentes d'abord |
 | Embeddings, une note modifiée | 0,3 à 0,6 s | idem | idem | worker |
 | kNN | 0,3 s (exact) | 6 s (exact) | 20 s (HNSW) + 5 s (mesure du rappel) | worker analyse |
 | Centiles, hubs, doublons | < 1 s | 1 s | 3 s | worker analyse |
