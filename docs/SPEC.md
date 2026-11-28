@@ -29,13 +29,13 @@
 | D3 | Dépôts (créés le 2026-11-27) | Organisation `SemanticAtlas` à 5 dépôts : `.github`, `semanticatlas.github.io`, `semantic-atlas-core`, `semantic-atlas` (extension), `semantic-atlas-pwo` | Monodépôt unique |
 | D4 | Moteur d'inférence (spike S1 fait le 2026-11-28) | **Candle (Rust) dans `semantic-atlas-engine`**, avec nos encodeurs BERT et ModernBERT et des poids Q8_0 convertis par nous ; seules les données du modèle se téléchargent | ONNX Runtime « minimal » réduit (mesuré, repli documenté) |
 | D5 | Modèle par défaut | **granite-embedding-97m-multilingual-r2 en Q8_0 maison** (Apache-2.0, 384 d, sans préfixe, 103,6 Mo), sous réserve du banc de qualité S2 ; l'export int8 ONNX publié est exclu (cosinus 0,93 contre fp32) | multilingual-e5-small en Q8_0 maison (MIT, préfixes, 125,8 Mo) |
-| D6 | Téléchargement du modèle | Consentement explicite, révision Hugging Face figée, SHA-256 vérifié, téléchargement par tranches `Range`, import manuel hors ligne, jamais de mise à jour silencieuse | — |
+| D6 | Téléchargement du modèle | Consentement explicite, SHA-256 vérifié, téléchargement par tranches `Range`, import manuel hors ligne, jamais de mise à jour silencieuse. **Hébergement (décidé le 2026-11-28) : nos fichiers Q8_0 en assets de releases GitHub** de l'organisation `SemanticAtlas`, versionnés, avec leur licence et leur attribution (granite : Apache-2.0, e5 : MIT) | Hugging Face |
 | D7 | Stockage de l'index | **IndexedDB local à l'appareil** + **instantané optionnel** en éclats ≤ 4 Mo dans un dossier visible du vault | Dossier de l'extension (rejeté) |
 | D8 | `minAppVersion` | **1.11.4** (`SecretStorage`) | 1.13.0 (réglages déclaratifs) |
 | D9 | Fonction de qualité Leiden | **CPM** à résolution calibrée, décision finale par l'expérience de la phase 2 | Modularité avec résolution |
 | D10 | Mobile | Lecture de l'instantané, recherche BM25 + expansion par vecteurs, pas de modèle local par défaut | Modèle local opt-in (tablettes) |
 | D11 | Vue « Relations » | Nouvelle vue du graphe des liens, partageant modèle, physique et rendu avec Explorer | Préréglage d'Explorer |
-| D12 | Distribution du cœur | npm `@semanticatlas/core` (portée à réserver), versions 0.x semver | Dépendance Git |
+| D12 | Distribution du cœur et du moteur (décidé le 2026-11-28) | **Tags Git de distribution** (`core-dist-v<version>`, `engine-dist-v<version>`, branche `dist` avec `dist/` et `engine.wasm`), versions 0.x semver ; 0.1.0 publiée le 2026-11-28 | npm `@semanticatlas/*` plus tard |
 | D13 | Langage du calcul (décidé le 2026-11-27) | **Rust**, crate `semantic-atlas-engine` compilé en WebAssembly (bureau, mobile, progressive-web-office) et en natif (futurs outils) ; TypeScript pour le contrat, les adaptateurs, le rendu, les workers et l'interface | Tout en TypeScript |
 
 Le détail, les conséquences et les replis figurent en section 6.
