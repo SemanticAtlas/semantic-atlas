@@ -46,6 +46,15 @@ export interface ManualName {
 	anchors: string[];
 }
 
+export type Verdict = 'linked' | 'unrelated' | 'ignored';
+
+/** What the user decided about a suggested link (a < b). */
+export interface Judgement {
+	a: string;
+	b: string;
+	verdict: Verdict;
+}
+
 export type DateSource = 'property' | 'created' | 'modified';
 
 export interface AnalysisSettings {
@@ -57,6 +66,8 @@ export interface AnalysisSettings {
 	names: ManualName[];
 	/** Date of a note for the time views. */
 	dateSource: DateSource;
+	/** Suggested links the user linked, declared unrelated or ignored: never suggested again. */
+	judged: Judgement[];
 }
 
 export interface SemanticAtlasSettings {
@@ -86,6 +97,7 @@ export const DEFAULT_ANALYSIS_SETTINGS: Readonly<AnalysisSettings> = Object.free
 	axes: [],
 	names: [],
 	dateSource: 'modified',
+	judged: [],
 });
 
 export const DEFAULT_SETTINGS: Readonly<SemanticAtlasSettings> = Object.freeze({
@@ -149,6 +161,7 @@ const normalizeIndex = (raw: unknown): IndexSettings => {
 };
 
 const DATE_SOURCES: readonly DateSource[] = ['property', 'created', 'modified'];
+const VERDICTS: readonly Verdict[] = ['linked', 'unrelated', 'ignored'];
 
 const normalizeAnalysis = (raw: unknown): AnalysisSettings => {
 	const r = isRecord(raw) ? raw : {};
@@ -167,6 +180,11 @@ const normalizeAnalysis = (raw: unknown): AnalysisSettings => {
 		axes,
 		names,
 		dateSource: DATE_SOURCES.includes(r.dateSource as DateSource) ? (r.dateSource as DateSource) : d.dateSource,
+		judged: Array.isArray(r.judged)
+			? r.judged
+					.filter((j): j is Judgement => isRecord(j) && typeof j.a === 'string' && typeof j.b === 'string' && VERDICTS.includes(j.verdict as Verdict))
+					.map((j) => (j.a <= j.b ? { a: j.a, b: j.b, verdict: j.verdict } : { a: j.b, b: j.a, verdict: j.verdict }))
+			: [],
 	};
 };
 

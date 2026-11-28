@@ -8,6 +8,7 @@ import { SemanticAtlasSettingTab } from './settings/tab';
 import { IndexingService, type IndexState } from './indexing/service';
 import { AnalysisService } from './analysis/service';
 import { LandscapeView, VIEW_TYPE_LANDSCAPE } from './views/landscape';
+import { ExplorerLeafView, VIEW_TYPE_EXPLORER } from './views/explorer';
 import { ClearDataModal, ModelModal } from './views/model-modal';
 import { RelatedNotesView, VIEW_TYPE_RELATED } from './views/related';
 import { RelationsLeafView, VIEW_TYPE_RELATIONS, type RelationsViewState } from './views/relations';
@@ -88,10 +89,26 @@ export default class SemanticAtlasPlugin extends Plugin {
 				this.settings.analysis.names = names;
 				await this.saveSettings();
 			},
+			saveJudged: async (judged) => {
+				this.settings.analysis.judged = judged;
+				await this.saveSettings();
+			},
 			log: this.log,
 		});
 		this.registerView(VIEW_TYPE_LANDSCAPE, (leaf) => new LandscapeView(leaf, this));
 		this.addCommand({ id: 'open-landscape', name: this.t('commands.openLandscape'), callback: () => void this.openLandscape() });
+		this.registerView(VIEW_TYPE_EXPLORER, (leaf) => new ExplorerLeafView(leaf, this));
+		this.addCommand({ id: 'open-explorer', name: this.t('commands.openExplorer'), callback: () => void this.openExplorer(null) });
+		this.addCommand({
+			id: 'open-explorer-here',
+			name: this.t('commands.openExplorerHere'),
+			checkCallback: (checking) => {
+				const file = this.app.workspace.getActiveFile();
+				if (!file || !this.analysis.result()?.notes.has(file.path)) return false;
+				if (!checking) void this.openExplorer(file.path);
+				return true;
+			},
+		});
 		this.addCommand({
 			id: 'update-analysis',
 			name: this.t('commands.updateAnalysis'),
@@ -121,12 +138,14 @@ export default class SemanticAtlasPlugin extends Plugin {
 			this.registerEvent(
 				this.app.vault.on('rename', (file, oldPath) => {
 					void this.index.remove(oldPath);
+					void this.moveJudged(oldPath, file.path);
 					if (file instanceof TFile) this.onNoteChanged(file);
 				}),
 			);
 			this.registerEvent(
 				this.app.vault.on('delete', (file) => {
 					void this.index.remove(file.path);
+					void this.moveJudged(file.path, null);
 				}),
 			);
 		});
@@ -211,6 +230,30 @@ export default class SemanticAtlasPlugin extends Plugin {
 		if (!leaf) return;
 		if (leaf.view.getViewType() !== VIEW_TYPE_RELATED) await leaf.setViewState({ type: VIEW_TYPE_RELATED, active: true });
 		await workspace.revealLeaf(leaf);
+	}
+
+	/** Opens the explorer (or reveals it), centred on `focus` when given. */
+	async openExplorer(focus: string | null): Promise<void> {
+		const { workspace } = this.app;
+		const leaf = workspace.getLeavesOfType(VIEW_TYPE_EXPLORER)[0] ?? workspace.getLeaf('tab');
+		if (leaf.view.getViewType() !== VIEW_TYPE_EXPLORER) await leaf.setViewState({ type: VIEW_TYPE_EXPLORER, active: true, state: focus ? { focus } : {} });
+		else if (focus && leaf.view instanceof ExplorerLeafView) leaf.view.focusNote(focus);
+		await workspace.revealLeaf(leaf);
+	}
+
+	/** Keeps the judged suggestions in step with renamed and deleted notes. */
+	private async moveJudged(oldPath: string, newPath: string | null): Promise<void> {
+		const before = this.settings.analysis.judged;
+		const after = before
+			.filter((j) => newPath !== null || (j.a !== oldPath && j.b !== oldPath))
+			.map((j) => {
+				const a = j.a === oldPath ? newPath! : j.a;
+				const b = j.b === oldPath ? newPath! : j.b;
+				return a <= b ? { a, b, verdict: j.verdict } : { a: b, b: a, verdict: j.verdict };
+			});
+		if (JSON.stringify(after) === JSON.stringify(before)) return;
+		this.settings.analysis.judged = after;
+		await this.saveSettings();
 	}
 
 	async openLandscape(): Promise<void> {

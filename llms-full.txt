@@ -16,9 +16,10 @@ Everything is computed on your device. By default, no data leaves it.
 > **Status: early development.** Available today:
 > - the [link graph](docs/LINK-GRAPH.md), global or local, with notes not created yet as an option;
 > - the [semantic index](docs/SEMANTIC-INDEX.md): related notes, search by meaning, random close note;
-> - the [landscape](docs/LANDSCAPE.md): map of the themes, clusters you can rename, themes over time, interest axes and the quality of the analysis.
+> - the [landscape](docs/LANDSCAPE.md): map of the themes, clusters you can rename, themes over time, interest axes and the quality of the analysis;
+> - the [explorer](docs/EXPLORER.md): notes by meaning coloured by any signal, suggested links checked on your own links, drift.
 >
-> Missing links and the free exploration views are not available yet. See [the specification](docs/SPEC.md) and the [changelog](CHANGELOG.md).
+> Projections, sub-maps, free physics and 3D are not available yet. See [the specification](docs/SPEC.md) and the [changelog](CHANGELOG.md).
 
 ## Installation
 
@@ -29,7 +30,7 @@ Not yet published in the community directory. To try a development build, copy `
 | Capability | Current version | Planned |
 |---|---|---|
 | Network | Only to download the embedding model, **once, after you click and confirm**. The files come from `github.com` (release `granite-r2-q8_0-v1` of SemanticAtlas/semantic-atlas-models), which redirects to `release-assets.githubusercontent.com`. The address, size and license are shown first, the version is fixed, and each file's SHA-256 is checked. Nothing about your notes is sent. The model can also be imported from files, with no network at all. | Optional external providers (OpenAI-compatible endpoint, Ollama), off by default. |
-| File system | Reads notes through Obsidian (cached content and metadata cache). Writes only the plugin settings (`data.json`). The model and the index are kept in the app's IndexedDB on this device, outside the vault. Creates a note only when you open a note that does not exist yet from the link graph, as clicking an unresolved link does. | Reads notes through the Obsidian API; changes a note only after an explicit action of yours; optional index snapshot in a visible folder of the vault; index cache in IndexedDB on the device. Nothing outside the vault. |
+| File system | Reads notes through Obsidian (cached content and metadata cache). Writes only the plugin settings (`data.json`). The model and the index are kept in the app's IndexedDB on this device, outside the vault. Creates a note only when you open a note that does not exist yet from the link graph, as clicking an unresolved link does. Changes a note only when you press **Link** on a suggested link in the explorer: a link is added on a new line at the end of the note. | Reads notes through the Obsidian API; changes a note only after an explicit action of yours; optional index snapshot in a visible folder of the vault; index cache in IndexedDB on the device. Nothing outside the vault. |
 | Clipboard | Writes only when you click **Copy as links** in Related notes. Never reads it. | Writes only when you choose "copy" (list of links, context for an assistant). Never reads it. |
 | Other capabilities | WebAssembly (the Semantic Atlas engine and its embedding module, embedded in `main.js`), a background Web Worker for embeddings, IndexedDB, and a canvas for the link graph. | Web Workers and WebAssembly bundled in `main.js`; WebGL for maps. |
 
@@ -92,6 +93,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - index settings (version 2, migrated): title weight, passage length, excluded folders and tags, code blocks, mobile;
   - status bar progress;
   - tested in Obsidian 1.15.1 with 516 notes.
+- Explorer view (commands "Open the explorer" and "Open in the explorer, centred on this note", see `docs/EXPLORER.md`): notes placed by meaning, colour by cluster, folder, main tag, role, bridge, isolation, precursor, recent activity, date, relevance or page rank (missing values in grey), size by links, page rank, centrality or recent activity, links by kind, interactive legend, card of the selected note, drift through the closest notes (0.1 to 10 s per step, path copied as links). Suggested links with their reasons (similarity, shared words, common neighbours, shared tags, closest passages) and three actions (link, not related, ignore), remembered in the settings; the score is checked on the vault's own links and combined with shared neighbours and tags only when that wins. Uses @semanticatlas/core 0.6.0.
 - Landscape view (command "Open the landscape", see `docs/LANDSCAPE.md`): map of the notes by cluster, cluster cards with renaming (a name given by hand follows the most central notes of its cluster, so it is kept across devices and after clearing the data), notes per cluster over time (year, quarter or month, by modification, creation or a date property), interest axes against clusters, and a "Quality of the analysis" panel (modularity, silhouette, stability, hubness, near duplicates, most isolated notes, with indicative thresholds). The analysis (Leiden clusters by consensus, names, roles, centralities, layout) runs in a background worker after indexing and keeps identifiers, names and positions from one run to the next; command "Update the analysis". Settings version 3 (migrated): cluster size, date source and property, interest axes, names given by hand. Tested in Obsidian 1.15.1 with 516 notes (analysis in under a second).
 - Link graph view (commands "Open link graph" and "Open local link graph"): explicit links, embeds and front-matter links from the metadata cache. It is laid out by the Semantic Atlas engine (WebAssembly, embedded) and offers a local graph by depth, optional ghost notes for links to notes not created yet, an accessible table of links, keyboard navigation and theme colours. The view state is saved. See `docs/LINK-GRAPH.md`. Tested in Obsidian 1.15.1 (desktop, light and dark themes, plugin reload).
 
@@ -131,6 +133,8 @@ This page describes the code as it is. The target architecture is in [SPEC.md, s
 | `src/analysis/snapshot.ts`, `quality.ts`, `tables.ts`, `docs.ts` | Snapshot of an analysis and names given by hand, quality report, tables over time and against axes, text used for names | no |
 | `src/analysis/service.ts` | Runs the analysis in its worker after indexing, keeps the result and snapshot, renames clusters, embeds the axes | yes |
 | `src/views/landscape.ts` | Landscape view: map, clusters, over time, axes, quality panel | yes |
+| `src/explorer/variables.ts` | Values of "Colour by" and "Size by" for each note, shared words of two notes | no |
+| `src/views/explorer.ts` | Explorer view: map, card, suggested links and their actions, drift | yes |
 
 The embedding worker (`@semanticatlas/core/embed-worker`) and the analysis worker (`@semanticatlas/core/analysis-worker`) are bundled on their own by esbuild, inlined in `main.js` as text and started from blob URLs. The analysis worker receives a copy of the engine's `engine.wasm`. The engine's `embed.wasm` is embedded (esbuild `binary` loader) and handed to the worker. The model files come from IndexedDB.
 
@@ -157,6 +161,49 @@ The link graph uses `RelationsView` from `@semanticatlas/core`. The engine's Web
 # Dependency maintenance
 
 Dependabot checks npm dependencies and GitHub Actions workflow references weekly using `.github/dependabot.yml`. It proposes updates as pull requests; review the changes and run CI before merging. The core and engine are pinned to GitHub distribution tags, so check their releases and compatibility when updating those dependencies.
+
+
+<!-- docs/EXPLORER.md -->
+
+# Explorer
+
+The explorer shows every analysed note on a map, placed by meaning, with the variables and links you choose. It needs the [semantic index](SEMANTIC-INDEX.md) and an analysis (see [the landscape](LANDSCAPE.md)). Nothing leaves your device; a note is changed only when you press **Link** on a suggestion.
+
+Run **Open the explorer**, or **Open in the explorer, centred on this note** from a note.
+
+## Map
+
+- **Colour by**: cluster, folder, main tag (the note's tag used by the most notes), role (core of its cluster, connector, peripheral), bridge (participation coefficient), isolation, precursor, recent activity, date, relevance to the interest axes (when axes are declared), page rank. Numbers use a colour-blind-safe scale by rank; notes without a value are grey and counted in the legend ("no value"), never shown as zero.
+- **Size by**: links, page rank, centrality in its cluster, recent activity, or the same size.
+- **Legend**: hover an entry to highlight its notes; select it to show them alone.
+- **Links shown**: links, embeds, properties and suggested links (dashed), each on or off. With many links, only those of the hovered or selected note are drawn.
+- **Navigation**: drag to move, wheel or pinch to zoom, **Show everything** to fit the map. Click a note to select it, double-click to open it. With the keyboard, on the map: arrows move, + and − zoom, 0 shows everything, N and P select the next and previous note (announced), Enter opens it, Escape clears the selection.
+- The display choices are saved with the view.
+
+## Card of the selected note
+
+The start of its text, its cluster, role and isolation, its closest notes with their similarity, and its links in and out. Click a name to select it on the map; Ctrl or Cmd-click to open it.
+
+## Suggested links
+
+Pairs of notes close in meaning that are not linked, with their reasons: similarity, words both notes contain (the rarest first), notes linked to both, shared tags, and, on demand, the two closest passages. A pair already two links apart is flagged.
+
+Before ranking them, the score is **checked on your own links**: 20 % of them are hidden, and the panel tells whether the score finds them again better when it also counts shared neighbours and tags than with similarity alone. The combination is used only when it clearly wins (at least 0.02 of AUC, without losing precision); with fewer than about 150 links there is not enough to check, and similarity alone is used. See the core's `docs/LINKS.md` and [METRICS.md](METRICS.md).
+
+Three actions:
+
+- **Link** adds a link to the second note on a new line at the end of the first one, in your link format;
+- **Not related** and **Ignore** hide the pair.
+
+Your decisions are saved in the plugin's settings (they follow renamed notes) and the pair is never suggested again. Near duplicates are listed in the landscape's quality panel, not here. In a bilingual vault, a note and its translation often come first: link them if you wish.
+
+## Drift
+
+**Drift** walks from the selected note (or a random one) to the most similar note not visited yet, one step every 0.1 to 10 seconds (**Step**); the map follows. The path is listed with the similarity of each step and can be copied as a list of links.
+
+## Coming next
+
+Projections (t-SNE, UMAP, PaCMAP) with their measured quality, and sub-maps of a cluster, folder, tag, search or drift. Today the map uses the landscape's layout.
 
 
 <!-- docs/LANDSCAPE.md -->
@@ -389,6 +436,7 @@ The score is the cosine similarity between notes. It ranks the results of one no
 | D11 | Vue « Relations » | Nouvelle vue du graphe des liens, partageant modèle, physique et rendu avec Explorer | Préréglage d'Explorer |
 | D12 | Distribution du cœur et du moteur (décidé le 2026-11-28) | **Tags Git de distribution** (`core-dist-v<version>`, `engine-dist-v<version>`, branche `dist` avec `dist/` et `engine.wasm`), versions 0.x semver ; 0.1.0 publiée le 2026-11-28 | npm `@semanticatlas/*` plus tard |
 | D13 | Langage du calcul (décidé le 2026-11-27) | **Rust**, crate `semantic-atlas-engine` compilé en WebAssembly (bureau, mobile, progressive-web-office) et en natif (futurs outils) ; TypeScript pour le contrat, les adaptateurs, le rendu, les workers et l'interface | Tout en TypeScript |
+| D14 | Modèle « haute qualité » optionnel (proposé le 2026-11-28, **à valider après le spike S5**) | **Qwen3-Embedding-0.6B**, fichier GGUF Q8_0 **officiel** de Qwen (Apache-2.0, 639 Mo, 1024 d réductibles par MRL) **téléchargé directement depuis Hugging Face**, épinglé à un commit (`Qwen/Qwen3-Embedding-0.6B-GGUF@370f27d7`, SHA-256 `06507c7b…`), tokeniseur du dépôt principal (`@97b0c614`, SHA-256 `def76fb0…`). Rien n'est republié : le moteur lit le GGUF standard (encodeur Qwen3 à ajouter : décodeur, attention groupée, RoPE, vecteur du dernier jeton). Bureau seulement, granite reste le défaut. Coût estimé (à mesurer) : 15 à 20 fois le calcul de granite, environ 650 Mo de mémoire. Spike S5 : rappel@10, MRR et recherche croisée sur le banc S2, vitesse réelle en WASM | Rester sur granite seul |
 
 Le détail, les conséquences et les replis figurent en section 6.
 

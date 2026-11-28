@@ -31,6 +31,8 @@ This page describes the code as it is. The target architecture is in [SPEC.md, s
 | `src/analysis/snapshot.ts`, `quality.ts`, `tables.ts`, `docs.ts` | Snapshot of an analysis and names given by hand, quality report, tables over time and against axes, text used for names | no |
 | `src/analysis/service.ts` | Runs the analysis in its worker after indexing, keeps the result and snapshot, renames clusters, embeds the axes | yes |
 | `src/views/landscape.ts` | Landscape view: map, clusters, over time, axes, quality panel | yes |
+| `src/explorer/variables.ts` | Values of "Colour by" and "Size by" for each note, shared words of two notes | no |
+| `src/views/explorer.ts` | Explorer view: map, card, suggested links and their actions, drift | yes |
 
 The embedding worker (`@semanticatlas/core/embed-worker`) and the analysis worker (`@semanticatlas/core/analysis-worker`) are bundled on their own by esbuild, inlined in `main.js` as text and started from blob URLs. The analysis worker receives a copy of the engine's `engine.wasm`. The engine's `embed.wasm` is embedded (esbuild `binary` loader) and handed to the worker. The model files come from IndexedDB.
 

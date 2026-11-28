@@ -8,6 +8,7 @@ export interface DocCache {
 	headings?: { heading: string }[] | undefined;
 	tags?: { tag: string }[] | undefined;
 	frontmatter?: Record<string, unknown> | undefined;
+	frontmatterPosition?: { end: { offset: number } } | undefined;
 }
 
 const frontmatterTags = (fm: Record<string, unknown> | undefined): string[] => {
@@ -23,6 +24,6 @@ export function docOf(title: string, cache: DocCache | null, content: string, ma
 		title,
 		headings: (cache?.headings ?? []).map((h) => h.heading),
 		tags: [...new Set(tags)],
-		text: cleanMarkdown(content).slice(0, maxText),
+		text: cleanMarkdown(content.slice(cache?.frontmatterPosition?.end.offset ?? 0)).slice(0, maxText),
 	};
 }

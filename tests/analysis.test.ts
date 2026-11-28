@@ -49,6 +49,8 @@ const result = (): AnalysisResult => ({
 	nearDuplicates: [{ a: 'a.md', b: 'b.md', similarity: 0.98 }],
 	quality: { modularity: 0.42, silhouette: 0.08, clusterCount: 2, sizes: [2, 1], mergedClusters: 1 },
 	similarityCentiles: new Float64Array(101),
+	knn: { k: 0, neighbours: new Uint32Array(0), similarities: new Float32Array(0) },
+	suggestions: { items: [], evaluation: { status: 'insufficient', links: 0, positives: 0 }, weights: { adamicAdar: 0, tags: 0 } },
 });
 
 describe('snapshot', () => {
@@ -201,6 +203,13 @@ describe('axisTable', () => {
 });
 
 describe('docOf', () => {
+	it('leaves the front matter out of the text', () => {
+		const content = '---\nsource: https://example.org\nlang: fr\n---\n# Trompette\n\nLa trompette est un instrument.';
+		const d = docOf('Trompette', { frontmatterPosition: { end: { offset: content.indexOf('# Trompette') - 1 } } }, content);
+		expect(d.text).not.toContain('source');
+		expect(d.text).toContain('instrument');
+	});
+
 	it('keeps title, headings, tags and a bounded cleaned text', () => {
 		const d = docOf('Title', { headings: [{ heading: 'Intro' }], tags: [{ tag: '#music/jazz' }], frontmatter: { tags: ['bebop'] } }, '# Intro\n\nSome **bold** text', 12);
 		expect(d.title).toBe('Title');

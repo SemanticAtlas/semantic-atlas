@@ -479,6 +479,23 @@ export class IndexingService {
 		return this.noteIndex.search(v, k, (other) => other !== id).map((h) => ({ ...h, passage: this.bestPassage(h.id, v) }));
 	}
 
+	/** The two most similar passages of two notes, and their similarity. */
+	closestPassages(a: string, b: string): { a: Passage; b: Passage; similarity: number } | null {
+		const ca = this.chunks.get(a) ?? [];
+		const cb = this.chunks.get(b) ?? [];
+		let best: { a: ChunkRecord; b: ChunkRecord; similarity: number } | null = null;
+		for (const x of ca) {
+			for (const y of cb) {
+				let s = 0;
+				for (let i = 0; i < x.vector.length; i++) s += x.vector[i]! * y.vector[i]!;
+				if (!best || s > best.similarity) best = { a: x, b: y, similarity: s };
+			}
+		}
+		if (!best) return null;
+		const passage = (c: ChunkRecord): Passage => ({ text: '', start: c.start, end: c.end, headings: c.headings });
+		return { a: passage(best.a), b: passage(best.b), similarity: best.similarity };
+	}
+
 	/** Changes whenever the set of note vectors changes. */
 	revision(): number {
 		return this.revisionCount;

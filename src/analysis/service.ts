@@ -4,12 +4,14 @@
  * snapshot in the index database, so that identifiers, names and the map stay stable.
  */
 import { TFile, getAllTags, type App } from 'obsidian';
+import { pairKey, scoreAxes, tokenize } from '@semanticatlas/core';
 import { AnalysisClient, type AnalysisResult, type Axis } from '@semanticatlas/core';
 import engineWasm from '@semanticatlas/engine/engine.wasm';
 import analysisWorkerCode from 'virtual:analysis-worker';
 import type { IndexingService } from '../indexing/service';
 import type { Logger } from '../log';
-import type { AnalysisSettings, IndexSettings, ManualName } from '../settings/schema';
+import type { AnalysisSettings, IndexSettings, Judgement, ManualName, Verdict } from '../settings/schema';
+import { sharedWords, type NoteFacts } from '../explorer/variables';
 import { collectRelations } from '../adapter/collect';
 import { linkResolver, readNotes } from '../adapter/vault';
 import { docOf, type NoteDoc } from './docs';
@@ -34,6 +36,8 @@ export interface AnalysisDeps {
 	indexSettings: () => IndexSettings;
 	/** Saves the names given by hand (settings). */
 	saveNames: (names: ManualName[]) => Promise<void>;
+	/** Saves the judged suggestions (settings). */
+	saveJudged: (judged: Judgement[]) => Promise<void>;
 	log: Logger;
 }
 
@@ -60,6 +64,9 @@ export class AnalysisService {
 	private client: AnalysisClient | null = null;
 	private workerUrl: string | null = null;
 	private readonly axisCache = new Map<string, Float32Array>();
+	/** Text of each analysed note (title and start of the body) and word document frequencies. */
+	private texts = new Map<string, string>();
+	private docFreq = new Map<string, number>();
 
 	constructor(private readonly deps: AnalysisDeps) {}
 
@@ -152,12 +159,22 @@ export class AnalysisService {
 		const { app, index } = this.deps;
 		const { ids, vectors, dims } = index.noteVectors();
 		const docs: NoteDoc[] = [];
+		const tags: string[][] = [];
+		const texts = new Map<string, string>();
+		const docFreq = new Map<string, number>();
 		for (const id of ids) {
 			const file = app.vault.getFileByPath(id);
 			const cache = file ? app.metadataCache.getFileCache(file) : null;
 			const content = file ? await app.vault.cachedRead(file) : '';
-			docs.push(docOf(file?.basename ?? id, cache ?? null, content, MAX_TEXT));
+			const doc = docOf(file?.basename ?? id, cache ?? null, content, MAX_TEXT);
+			docs.push(doc);
+			tags.push((cache ? (getAllTags(cache) ?? []) : []).map((t) => t.replace(/^#/, '')));
+			const text = `${doc.title}\n${doc.text ?? ''}`;
+			texts.set(id, text);
+			for (const w of new Set(tokenize(text))) docFreq.set(w, (docFreq.get(w) ?? 0) + 1);
 		}
+		this.texts = texts;
+		this.docFreq = docFreq;
 		const known = new Set(ids);
 		const relations = collectRelations(
 			readNotes(app).filter((n) => known.has(n.path)),
@@ -166,7 +183,11 @@ export class AnalysisService {
 		const settings = this.deps.settings();
 		const previous = toPrevious((await index.indexStore()?.analysis()) ?? null);
 		const client = await this.engineClient();
-		return client.analyze({ ids, vectors, dims, docs, links: relations.edges }, { resolution: settings.resolution, seed: 1 }, previous);
+		return client.analyze(
+			{ ids, vectors, dims, docs, links: relations.edges, tags },
+			{ resolution: settings.resolution, seed: 1, suggestions: { exclude: settings.judged.map((j) => [j.a, j.b]) } },
+			previous,
+		);
 	}
 
 	/** Gives a cluster a name by hand, or gives it back its keyword name with an empty name. */
@@ -176,6 +197,75 @@ export class AnalysisService {
 		await this.deps.index.indexStore()?.setAnalysis(toSnapshot(this.current, Date.now()));
 		await this.deps.saveNames(names);
 		this.set({});
+	}
+
+	/** Records the user's decision on a suggested link; it is never suggested again. */
+	async judge(a: string, b: string, verdict: Verdict): Promise<void> {
+		const [x, y] = a <= b ? [a, b] : [b, a];
+		const judged = this.deps.settings().judged.filter((j) => !(j.a === x && j.b === y));
+		await this.deps.saveJudged([...judged, { a: x, b: y, verdict }]);
+		if (this.current) {
+			const key = pairKey(x, y);
+			this.current.suggestions.items = this.current.suggestions.items.filter((s) => pairKey(s.a, s.b) !== key);
+		}
+		this.set({});
+	}
+
+	/** Links note `a` to note `b`: a link on a new line at the end of `a`, in the user's link format. */
+	async link(a: string, b: string): Promise<void> {
+		const { app } = this.deps;
+		const from = app.vault.getFileByPath(a);
+		const to = app.vault.getFileByPath(b);
+		if (!(from instanceof TFile) || !(to instanceof TFile)) throw new Error('Note not found');
+		const text = app.fileManager.generateMarkdownLink(to, from.path);
+		await app.vault.process(from, (content) => `${content.replace(/\s*$/, '')}\n\n${text}\n`);
+		await this.judge(a, b, 'linked');
+	}
+
+	/** Start of a note's text (as analysed), for its card. */
+	excerpt(id: string, max = 280): string {
+		const text = this.texts.get(id) ?? '';
+		const body = text.slice(text.indexOf('\n') + 1).trim();
+		return body.length > max ? `${body.slice(0, max).replace(/\s+\S*$/, '')}…` : body;
+	}
+
+	/** Relevance centile of each note on the interest axes (best axis). */
+	async relevance(): Promise<Map<string, number>> {
+		const axes = await this.axes();
+		const scored = scoreAxes(this.vectors(), axes);
+		return new Map([...scored.notes].map(([id, n]) => [id, n.relevanceCentile]));
+	}
+
+	/** Words both notes contain, rarest first. */
+	sharedWords(a: string, b: string, max = 6): string[] {
+		return sharedWords(this.texts.get(a) ?? '', this.texts.get(b) ?? '', this.docFreq, this.texts.size, max);
+	}
+
+	/** Folder, tags, date, modification time and link degree of each analysed note. */
+	facts(): Map<string, NoteFacts> {
+		const { app } = this.deps;
+		const dates = this.dates();
+		const ids = [...(this.current?.notes.keys() ?? [])];
+		const degree = new Map<string, Set<string>>(ids.map((id) => [id, new Set<string>()]));
+		for (const [source, targets] of Object.entries(app.metadataCache.resolvedLinks)) {
+			for (const target of Object.keys(targets)) {
+				if (source === target) continue;
+				degree.get(source)?.add(target);
+				degree.get(target)?.add(source);
+			}
+		}
+		const out = new Map<string, NoteFacts>();
+		for (const id of ids) {
+			const file = app.vault.getFileByPath(id);
+			out.set(id, {
+				folder: file?.parent?.path === '/' ? '' : (file?.parent?.path ?? ''),
+				tags: this.tagsOf(id).map((t) => t.replace(/^#/, '')),
+				date: dates.get(id),
+				modified: file?.stat.mtime ?? Number.NaN,
+				degree: degree.get(id)?.size ?? 0,
+			});
+		}
+		return out;
 	}
 
 	/** Date of each analysed note, from the chosen source. */

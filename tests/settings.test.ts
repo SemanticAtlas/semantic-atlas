@@ -109,6 +109,26 @@ describe('settings version 3 (analysis, axes, names)', () => {
 		expect(settings.analysis.dateSource).toBe('property');
 	});
 
+	it('keeps the judged link suggestions, pairs in order, drops malformed ones', () => {
+		const stored = {
+			...DEFAULT_SETTINGS,
+			analysis: {
+				...DEFAULT_SETTINGS.analysis,
+				judged: [
+					{ a: 'b.md', b: 'a.md', verdict: 'unrelated' },
+					{ a: 'c.md', b: 'd.md', verdict: 'linked' },
+					{ a: 'e.md', b: 'f.md', verdict: 'maybe' },
+					{ a: 'g.md', verdict: 'ignored' },
+				],
+			},
+		};
+		expect(migrateSettings(stored).settings.analysis.judged).toEqual([
+			{ a: 'a.md', b: 'b.md', verdict: 'unrelated' },
+			{ a: 'c.md', b: 'd.md', verdict: 'linked' },
+		]);
+		expect(migrateSettings({ ...DEFAULT_SETTINGS, analysis: { resolution: 1 } }).settings.analysis.judged).toEqual([]);
+	});
+
 	it('repairs an unknown date source and an out-of-range resolution', () => {
 		const { settings } = migrateSettings({ ...DEFAULT_SETTINGS, analysis: { ...DEFAULT_SETTINGS.analysis, dateSource: 'moon', resolution: 99 } });
 		expect(settings.analysis.dateSource).toBe(DEFAULT_SETTINGS.analysis.dateSource);
