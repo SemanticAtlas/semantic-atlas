@@ -76,6 +76,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Weekly Dependabot updates for npm dependencies and GitHub Actions.
+
 - Phase 0 specification (`docs/SPEC.md`): differences with the current Obsidian documentation, library choices, decisions, budgets, evaluation plan and risks.
 - Project skeleton: reproducible esbuild build, official Obsidian ESLint rules, Vitest and fast-check tests, CI (lint, types, tests, build, size budget, reproducibility, llms.txt), release workflow with build provenance attestation, justfile.
 - Versioned settings with migrations; settings saved by a newer release are used but never overwritten; reload on external change (sync).
@@ -143,6 +145,13 @@ The link graph uses `RelationsView` from `@semanticatlas/core`. The engine's Web
 ## Build
 
 `npm run build` type-checks, then bundles `src/main.ts` into a single `main.js` (CommonJS, ES2021, minified, licenses kept at the end). The build is reproducible: CI builds twice and compares the SHA-256, because the community directory rebuilds the plugin and compares it with the release.
+
+
+<!-- docs/DEPENDENCIES.md -->
+
+# Dependency maintenance
+
+Dependabot checks npm dependencies and GitHub Actions workflow references weekly using `.github/dependabot.yml`. It proposes updates as pull requests; review the changes and run CI before merging. The core and engine are pinned to GitHub distribution tags, so check their releases and compatibility when updating those dependencies.
 
 
 <!-- docs/LINK-GRAPH.md -->
