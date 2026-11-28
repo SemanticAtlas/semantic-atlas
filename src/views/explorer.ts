@@ -7,7 +7,10 @@
 import { ItemView, Menu, Notice, TFile, setIcon, type ViewStateResult, type WorkspaceLeaf } from 'obsidian';
 import {
 	ExplorerView,
+	PhysicsClient,
 	categoricalColours,
+	physicsEdges,
+	similarityAtCentile,
 	colourOf,
 	driftStep,
 	numericColours,
@@ -17,11 +20,14 @@ import {
 	type AnalysisResult,
 	type ExplorerEdge,
 	type ExplorerEdgeKind,
+	type ExplorerOptions,
 	type ExplorerLegend,
 	type ProjectionMethod,
 	type ProjectionResult,
 	type Suggestion,
 } from '@semanticatlas/core';
+import engineWasm from '@semanticatlas/engine/engine.wasm';
+import physicsWorkerCode from 'virtual:physics-worker';
 import type SemanticAtlasPlugin from '../main';
 import type { MessageKey } from '../i18n';
 import { collectRelations } from '../adapter/collect';
@@ -32,12 +38,64 @@ import { CATEGORY_BY, NUMBER_BY, SIZE_BY, categoryValues, isCategory, numericVal
 export const VIEW_TYPE_EXPLORER = 'semantic-atlas-explorer';
 
 const EDGE_KINDS: ExplorerEdgeKind[] = ['link', 'embed', 'property', 'suggested'];
-const PANELS = ['note', 'suggestions'] as const;
+const PANELS = ['note', 'suggestions', 'forces'] as const;
 type Panel = (typeof PANELS)[number];
 const SUGGESTIONS_SHOWN = 40;
 
-type Layout = 'landscape' | ProjectionMethod;
-const LAYOUTS: readonly Layout[] = ['tsne', 'umap', 'pacmap', 'landscape'];
+type Layout = 'landscape' | 'physics' | ProjectionMethod;
+const LAYOUTS: readonly Layout[] = ['tsne', 'umap', 'pacmap', 'physics', 'landscape'];
+const PROJECTIONS: readonly ProjectionMethod[] = ['tsne', 'umap', 'pacmap'];
+
+/** Settings of the free physics, saved with the view. */
+interface PhysicsState {
+	/** Projection the notes start from and are anchored to. */
+	anchorTo: ProjectionMethod;
+	centre: number;
+	repulsion: number;
+	/** Stiffness of explicit links (0: not simulated). */
+	links: number;
+	/** Stiffness of semantic edges (0: not simulated). */
+	semantic: number;
+	/** Semantic edges above this centile of the neighbours' similarities. */
+	semanticCentile: number;
+	linkDistance: number;
+	cohesion: number;
+	anchor: number;
+	damping: number;
+	collide: number;
+	halo: boolean;
+}
+
+const DEFAULT_PHYSICS: PhysicsState = {
+	anchorTo: 'tsne',
+	centre: 0.05,
+	repulsion: 30,
+	links: 1,
+	semantic: 0.5,
+	semanticCentile: 50,
+	linkDistance: 30,
+	cohesion: 0.3,
+	anchor: 0.2,
+	damping: 0.4,
+	collide: 3,
+	halo: true,
+};
+
+/** Sliders of the forces panel: key, minimum, maximum, step. */
+const SLIDERS: readonly [keyof PhysicsState, number, number, number][] = [
+	['centre', 0, 0.3, 0.01],
+	['repulsion', 0, 200, 5],
+	['links', 0, 2, 0.1],
+	['semantic', 0, 2, 0.1],
+	['semanticCentile', 0, 100, 5],
+	['linkDistance', 5, 120, 5],
+	['cohesion', 0, 1, 0.05],
+	['anchor', 0, 1, 0.05],
+	['damping', 0.1, 0.9, 0.05],
+	['collide', 0, 12, 1],
+];
+/** Settings that change the simulated edges: the simulation restarts from where it is. */
+const EDGE_SETTINGS: readonly (keyof PhysicsState)[] = ['links', 'semantic', 'semanticCentile'];
 
 interface ExplorerState extends Record<string, unknown> {
 	layout: Layout;
@@ -49,9 +107,10 @@ interface ExplorerState extends Record<string, unknown> {
 	panel: Panel;
 	/** Suggestions about the selected note only. */
 	aroundSelection: boolean;
+	physics: PhysicsState;
 }
 
-const DEFAULT_STATE: ExplorerState = { layout: 'tsne', colourBy: 'cluster', sizeBy: 'pagerank', edges: ['link', 'embed', 'property'], delay: 1.5, panel: 'note', aroundSelection: false };
+const DEFAULT_STATE: ExplorerState = { layout: 'tsne', colourBy: 'cluster', sizeBy: 'pagerank', edges: ['link', 'embed', 'property'], delay: 1.5, panel: 'note', aroundSelection: false, physics: { ...DEFAULT_PHYSICS } };
 const COLOUR_BY: readonly ColourBy[] = [...CATEGORY_BY, ...NUMBER_BY];
 
 export class ExplorerLeafView extends ItemView {
@@ -73,6 +132,15 @@ export class ExplorerLeafView extends ItemView {
 	/** Projections computed, by level and method, with the ids they were computed for. */
 	private projections = new Map<string, { ids: string[]; result: AnalysisResult; projection: ProjectionResult }>();
 	private quality: HTMLElement | null = null;
+	private explorerOptions: Partial<ExplorerOptions> | null = null;
+	private physics: PhysicsClient | null = null;
+	private physicsReady: Promise<PhysicsClient> | null = null;
+	private physicsUrl: string | null = null;
+	/** What the running simulation was started for, and its last positions. */
+	private physicsFor: { result: AnalysisResult; ids: string[] } | null = null;
+	private physicsPos: { x: Float32Array; y: Float32Array } | null = null;
+	private physicsAnchors: { x: Float32Array; y: Float32Array } | null = null;
+	private fitOnFrame = false;
 	/** Fit the camera after the next map update (a new level). */
 	private fitNext = false;
 
@@ -109,6 +177,16 @@ export class ExplorerLeafView extends ItemView {
 			if (typeof s.delay === 'number' && Number.isFinite(s.delay)) this.state.delay = Math.min(10, Math.max(0.1, s.delay));
 			if (PANELS.includes(s.panel as Panel)) this.state.panel = s.panel as Panel;
 			if (typeof s.aroundSelection === 'boolean') this.state.aroundSelection = s.aroundSelection;
+			if (typeof s.physics === 'object' && s.physics !== null) {
+				const p = { ...DEFAULT_PHYSICS };
+				for (const [key, min, max] of SLIDERS) {
+					const v = (s.physics as unknown as Record<string, unknown>)[key];
+					if (typeof v === 'number' && Number.isFinite(v)) (p as unknown as Record<string, number>)[key] = Math.min(max, Math.max(min, v));
+				}
+				if (PROJECTIONS.includes(s.physics.anchorTo)) p.anchorTo = s.physics.anchorTo;
+				if (typeof s.physics.halo === 'boolean') p.halo = s.physics.halo;
+				this.state.physics = p;
+			}
 			if (typeof s.focus === 'string') this.pendingFocus = s.focus;
 		}
 		await super.setState(state, result);
@@ -134,7 +212,12 @@ export class ExplorerLeafView extends ItemView {
 		const host = main.createDiv({ cls: 'semantic-atlas-explorer-map' });
 		this.side = main.createDiv({ cls: 'semantic-atlas-explorer-side' });
 		const t = this.plugin.t;
-		this.explorer = new ExplorerView(host, {
+		this.explorerOptions = {
+			neighbourHighlight: true,
+			onAreaOpen: (index) => {
+				const cluster = this.current()?.clusters[index];
+				if (cluster) void this.openSubmapOf(cluster.members, cluster.name);
+			},
 			labels: {
 				canvas: t('explorer.canvas'),
 				legend: t('explorer.legend'),
@@ -148,8 +231,18 @@ export class ExplorerLeafView extends ItemView {
 			onOpen: (id) => {
 				this.openNote(id);
 			},
-		});
+		};
+		this.explorer = new ExplorerView(host, this.explorerOptions);
+		this.updateDragging();
 		this.register(this.plugin.analysis.onChange(() => this.render(false)));
+		// The simulation stops when the view is hidden.
+		const doc = this.containerEl.doc;
+		const hide = (): void => {
+			if (!this.containerEl.isShown() || doc.hidden) this.physics?.freeze();
+		};
+		this.registerEvent(this.app.workspace.on('layout-change', hide));
+		this.registerEvent(this.app.workspace.on('active-leaf-change', hide));
+		this.registerDomEvent(doc, 'visibilitychange', hide);
 		this.registerEvent(this.app.workspace.on('css-change', () => this.explorer?.refreshTheme()));
 		this.render(true);
 		await Promise.resolve();
@@ -161,6 +254,11 @@ export class ExplorerLeafView extends ItemView {
 
 	override async onClose(): Promise<void> {
 		this.stopDrift();
+		this.physics?.terminate();
+		this.physics = null;
+		this.physicsReady = null;
+		if (this.physicsUrl) URL.revokeObjectURL(this.physicsUrl);
+		this.physicsUrl = null;
 		this.explorer?.dispose();
 		this.explorer = null;
 		await Promise.resolve();
@@ -230,16 +328,25 @@ export class ExplorerLeafView extends ItemView {
 			);
 			return;
 		}
-		const notice = new Notice(this.t('explorer.submap.computing', { count: subset.ids.length }), 0);
+		await this.openSubmapOf(subset.ids, subset.label);
+	}
+
+	/** Opens the sub-map of the given notes. */
+	private async openSubmapOf(ids: readonly string[], label: string): Promise<void> {
+		if (ids.length < SUBMAP_MIN || ids.length > SUBMAP_MAX) {
+			new Notice(this.t(ids.length < SUBMAP_MIN ? 'explorer.submap.tooFew' : 'explorer.submap.tooMany', { count: ids.length, min: SUBMAP_MIN, max: SUBMAP_MAX }));
+			return;
+		}
+		const notice = new Notice(this.t('explorer.submap.computing', { count: ids.length }), 0);
 		try {
-			const sub = await this.plugin.analysis.analyseSubset(subset.ids);
+			const sub = await this.plugin.analysis.analyseSubset(ids);
 			if (sub.skipped) {
-				new Notice(this.t('explorer.submap.tooFew', { count: subset.ids.length, min: SUBMAP_MIN, max: SUBMAP_MAX }));
+				new Notice(this.t('explorer.submap.tooFew', { count: ids.length, min: SUBMAP_MIN, max: SUBMAP_MAX }));
 				return;
 			}
 			this.stopDrift(false);
 			this.drift.path = [];
-			this.levels.push({ label: subset.label, result: sub });
+			this.levels.push({ label, result: sub });
 			if (this.selected && !sub.notes.has(this.selected)) this.selected = null;
 			this.renderLevel();
 		} catch (error) {
@@ -457,10 +564,11 @@ export class ExplorerLeafView extends ItemView {
 				legend,
 				areas:
 					this.state.colourBy === 'cluster'
-						? result.clusters.map((c) => ({ name: c.name, members: c.members.map((m) => index.get(m)).filter((i): i is number => i !== undefined) }))
+						? result.clusters.map((c) => ({ name: c.name, colour: colourOf(c.id), members: c.members.map((m) => index.get(m)).filter((i): i is number => i !== undefined) }))
 						: [],
 			});
 			explorer.setEdgeKinds(this.state.edges);
+			explorer.setHalo(this.state.layout === 'physics' && this.state.physics.halo);
 			explorer.setPath(this.drift.path.map((p) => p.id));
 			if (this.fitNext) {
 				this.fitNext = false;
@@ -485,14 +593,20 @@ export class ExplorerLeafView extends ItemView {
 			this.showQuality(null);
 			return null;
 		}
+		if (layout === 'physics') return this.physicsPositions(result, ids);
+		return this.projectionFor(result, ids, layout, true);
+	}
+
+	private async projectionFor(result: AnalysisResult, ids: string[], layout: ProjectionMethod, show: boolean): Promise<ProjectionResult | null> {
+		if (!show) this.showQuality(null);
 		const key = this.levelKey(layout);
 		const cached = this.projections.get(key);
 		if (cached?.result === result && cached.ids.length === ids.length && cached.ids.every((id, i) => id === ids[i])) {
-			this.showQuality(cached.projection);
+			if (show) this.showQuality(cached.projection);
 			return cached.projection;
 		}
 		const previous = cached ? new Map(cached.ids.map((id, i) => [id, [cached.projection.x[i]!, cached.projection.y[i]!] as [number, number]])) : undefined;
-		this.showQuality(null, true);
+		this.showQuality(null, true, layout);
 		try {
 			const projection = await this.plugin.analysis.project(ids, layout, previous);
 			if (projection.skipped) {
@@ -500,7 +614,7 @@ export class ExplorerLeafView extends ItemView {
 				return null;
 			}
 			this.projections.set(key, { ids, result, projection });
-			this.showQuality(projection);
+			if (show) this.showQuality(projection);
 			return projection;
 		} catch (error) {
 			this.plugin.log.error(`projection: ${error instanceof Error ? error.message : String(error)}`);
@@ -512,6 +626,13 @@ export class ExplorerLeafView extends ItemView {
 	/** Moves the notes to the chosen layout, animated. */
 	private async changeLayout(): Promise<void> {
 		const result = this.current();
+		this.updateDragging();
+		if (this.state.layout !== 'physics') this.stopPhysics();
+		if (this.state.layout === 'physics' || this.state.panel === 'forces') {
+			if (this.state.layout !== 'physics') this.state.panel = 'note';
+			this.renderSide();
+		}
+		this.explorer?.setHalo(this.state.layout === 'physics' && this.state.physics.halo);
 		if (!result || !this.explorer) return;
 		const ids = this.ids;
 		const pos = await this.positions(result, ids);
@@ -522,11 +643,217 @@ export class ExplorerLeafView extends ItemView {
 		this.explorer.fitAll();
 	}
 
-	private showQuality(p: ProjectionResult | null, computing = false): void {
+	// ---- free physics -----------------------------------------------------------------------
+
+	/** Dragging notes moves them only in the free physics (the view reads the option each time). */
+	private updateDragging(): void {
+		const options = this.explorerOptions;
+		if (!options) return;
+		if (this.state.layout === 'physics') {
+			options.onNodeDrag = (i, x, y, phase, pin) => {
+				if (!this.physics) return;
+				if (phase === 'end' && !pin) this.physics.unpin(i);
+				else this.physics.pin(i, x, y);
+			};
+		} else delete options.onNodeDrag;
+	}
+
+	private client(): Promise<PhysicsClient> {
+		this.physicsReady ??= (async () => {
+			this.physicsUrl = URL.createObjectURL(new Blob([physicsWorkerCode], { type: 'text/javascript' }));
+			const client = new PhysicsClient(new Worker(this.physicsUrl));
+			client.onFrame((frame) => {
+				if (this.state.layout !== 'physics' || !this.physicsFor || frame.x.length !== this.ids.length) return;
+				this.physicsPos = { x: frame.x, y: frame.y };
+				this.explorer?.setLivePositions(frame.x, frame.y);
+				if (this.fitOnFrame) {
+					this.fitOnFrame = false;
+					this.explorer?.fitAll();
+				}
+			});
+			client.onError((message) => {
+				this.plugin.log.error(`physics: ${message}`);
+			});
+			await client.init(engineWasm.slice());
+			this.physics = client;
+			return client;
+		})();
+		return this.physicsReady;
+	}
+
+	/** Projection positions scaled to the physics (about `linkDistance × √n × 1.5` wide), centred. */
+	private scaled(p: { x: Float32Array; y: Float32Array }): { x: Float32Array; y: Float32Array } {
+		const n = p.x.length;
+		let minX = Infinity;
+		let maxX = -Infinity;
+		let minY = Infinity;
+		let maxY = -Infinity;
+		for (let i = 0; i < n; i++) {
+			minX = Math.min(minX, p.x[i]!);
+			maxX = Math.max(maxX, p.x[i]!);
+			minY = Math.min(minY, p.y[i]!);
+			maxY = Math.max(maxY, p.y[i]!);
+		}
+		const span = Math.max(maxX - minX, maxY - minY, 1e-6);
+		const k = (this.state.physics.linkDistance * Math.sqrt(n) * 1.5) / span;
+		const cx = (minX + maxX) / 2;
+		const cy = (minY + maxY) / 2;
+		return { x: Float32Array.from(p.x, (v) => (v - cx) * k), y: Float32Array.from(p.y, (v) => (v - cy) * k) };
+	}
+
+	private async physicsPositions(result: AnalysisResult, ids: string[]): Promise<{ x: Float32Array; y: Float32Array } | null> {
+		const same = this.physicsFor?.result === result && this.physicsFor.ids.length === ids.length && this.physicsFor.ids.every((id, i) => id === ids[i]);
+		if (same && this.physicsPos) {
+			this.showQuality(null);
+			return this.physicsPos;
+		}
+		const projection = await this.projectionFor(result, ids, this.state.physics.anchorTo, false);
+		const base = projection ?? { x: Float32Array.from(ids, (id) => result.notes.get(id)!.x), y: Float32Array.from(ids, (id) => result.notes.get(id)!.y) };
+		const anchors = this.scaled(base);
+		// Notes already simulated keep their place; new ones start at their anchor.
+		const start = { x: Float32Array.from(anchors.x), y: Float32Array.from(anchors.y) };
+		if (this.physicsFor && this.physicsPos) {
+			const at = new Map(this.physicsFor.ids.map((id, i) => [id, i]));
+			ids.forEach((id, i) => {
+				const j = at.get(id);
+				if (j !== undefined) {
+					start.x[i] = this.physicsPos!.x[j]!;
+					start.y[i] = this.physicsPos!.y[j]!;
+				}
+			});
+		}
+		this.showQuality(null);
+		await this.startPhysics(result, ids, anchors, start);
+		return start;
+	}
+
+	private async startPhysics(result: AnalysisResult, ids: string[], anchors: { x: Float32Array; y: Float32Array }, start: { x: Float32Array; y: Float32Array }): Promise<void> {
+		const client = await this.client();
+		const p = this.state.physics;
+		const index = new Map(ids.map((id, i) => [id, i]));
+		const pairs: [number, number][] = [];
+		for (const e of collectRelations(readNotes(this.app).filter((nt) => index.has(nt.path)), linkResolver(this.app)).edges) {
+			if (e.kind === 'unresolved') continue;
+			const a = index.get(e.from);
+			const b = index.get(e.to);
+			if (a !== undefined && b !== undefined && a !== b) pairs.push([a, b]);
+		}
+		const groupOf = new Map(result.clusters.map((c, g) => [c.id, g]));
+		const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+		this.physicsFor = { result, ids };
+		this.physicsAnchors = anchors;
+		this.physicsPos = start;
+		this.fitOnFrame = true;
+		client.start({
+			n: ids.length,
+			edges: physicsEdges(ids.length, pairs, result.knn, { links: p.links, semantic: p.semantic, minSimilarity: similarityAtCentile(result.knn, p.semanticCentile) }),
+			groups: Uint32Array.from(ids, (id) => groupOf.get(result.notes.get(id)!.cluster) ?? 0),
+			anchors,
+			positions: start,
+			params: { center: p.centre, charge: -p.repulsion, linkDistance: p.linkDistance, velocityDecay: p.damping },
+			forces: { cohesion: p.cohesion, anchor: p.anchor, collide: p.collide },
+			seed: 1,
+			frames: !reduced,
+		});
+	}
+
+	private stopPhysics(): void {
+		this.physics?.stop();
+		this.physicsFor = null;
+		this.physicsPos = null;
+		this.physicsAnchors = null;
+	}
+
+	/** Applies a change of the forces panel. */
+	private async applyPhysics(key: keyof PhysicsState): Promise<void> {
+		const p = this.state.physics;
+		const client = this.physics;
+		const result = this.current();
+		this.save();
+		if (!client || !result || !this.physicsFor) return;
+		if (key === 'halo') this.explorer?.setHalo(p.halo);
+		else if (key === 'anchorTo') {
+			const projection = await this.projectionFor(result, this.ids, p.anchorTo, false);
+			if (projection) {
+				this.physicsAnchors = this.scaled(projection);
+				client.setAnchors(this.physicsAnchors.x, this.physicsAnchors.y);
+			}
+			this.showQuality(null);
+		} else if (key === 'linkDistance') {
+			// The anchors are scaled on the link distance.
+			const projection = await this.projectionFor(result, this.ids, p.anchorTo, false);
+			if (projection) {
+				this.physicsAnchors = this.scaled(projection);
+				client.setAnchors(this.physicsAnchors.x, this.physicsAnchors.y);
+			}
+			client.setParams({ linkDistance: p.linkDistance });
+		} else if (EDGE_SETTINGS.includes(key)) {
+			await this.startPhysics(result, this.ids, this.physicsAnchors ?? this.physicsPos!, this.physicsPos!);
+			this.fitOnFrame = false;
+		} else if (key === 'cohesion' || key === 'anchor' || key === 'collide') client.setForces({ [key]: p[key] });
+		else if (key === 'centre') client.setParams({ center: p.centre });
+		else if (key === 'repulsion') client.setParams({ charge: -p.repulsion });
+		else if (key === 'damping') client.setParams({ velocityDecay: p.damping });
+	}
+
+	private renderForces(el: HTMLElement): void {
+		const p = this.state.physics;
+		el.createEl('p', { cls: 'semantic-atlas-message', text: this.t('forces.hint') });
+		const anchor = el.createEl('label', { cls: 'semantic-atlas-force' });
+		anchor.createSpan({ text: this.t('forces.anchorTo') });
+		const select = anchor.createEl('select', { cls: 'dropdown' });
+		for (const m of PROJECTIONS) select.createEl('option', { value: m, text: this.t(`explorer.layout.${m}`) });
+		select.value = p.anchorTo;
+		select.addEventListener('change', () => {
+			if (!PROJECTIONS.includes(select.value as ProjectionMethod)) return;
+			p.anchorTo = select.value as ProjectionMethod;
+			void this.applyPhysics('anchorTo');
+		});
+		for (const [key, min, max, step] of SLIDERS) {
+			const row = el.createEl('label', { cls: 'semantic-atlas-force' });
+			row.createSpan({ text: this.t(`forces.${key as Exclude<keyof PhysicsState, 'anchorTo' | 'halo'>}`) });
+			const range = row.createEl('input', { type: 'range', attr: { min: String(min), max: String(max), step: String(step) } });
+			range.value = String(p[key]);
+			const value = row.createSpan({ cls: 'semantic-atlas-force-value', text: String(p[key]) });
+			range.addEventListener('input', () => {
+				(p as unknown as Record<string, number>)[key] = Number(range.value);
+				value.setText(range.value);
+				if (!EDGE_SETTINGS.includes(key)) void this.applyPhysics(key);
+			});
+			// Edges are rebuilt once the slider is released.
+			if (EDGE_SETTINGS.includes(key)) range.addEventListener('change', () => void this.applyPhysics(key));
+		}
+		const halo = el.createEl('label', { cls: 'semantic-atlas-toggle' });
+		const box = halo.createEl('input', { type: 'checkbox' });
+		box.checked = p.halo;
+		halo.appendText(this.t('forces.halo'));
+		box.addEventListener('change', () => {
+			p.halo = box.checked;
+			void this.applyPhysics('halo');
+		});
+		const actions = el.createDiv({ cls: 'semantic-atlas-actions' });
+		const reheat = actions.createEl('button', { text: this.t('forces.reheat') });
+		reheat.addEventListener('click', () => this.physics?.reheat(1));
+		const freeze = actions.createEl('button', { text: this.t('forces.freeze') });
+		freeze.addEventListener('click', () => this.physics?.freeze());
+		const reset = actions.createEl('button', { text: this.t('forces.reset') });
+		reset.addEventListener('click', () => {
+			this.state.physics = { ...DEFAULT_PHYSICS, anchorTo: p.anchorTo };
+			this.save();
+			const result = this.current();
+			if (result && this.physicsAnchors) void this.startPhysics(result, this.ids, this.physicsAnchors, this.physicsAnchors);
+			this.explorer?.setHalo(this.state.physics.halo);
+			this.renderSide();
+		});
+		el.createEl('p', { cls: 'semantic-atlas-message', text: this.t('forces.dragHint') });
+	}
+
+	private showQuality(p: ProjectionResult | null, computing = false, method: Layout = this.state.layout): void {
 		const el = this.quality;
 		if (!el) return;
 		el.empty();
-		if (computing) el.setText(this.t('explorer.projecting', { method: this.t(`explorer.layout.${this.state.layout}`) }));
+		if (computing) el.setText(this.t('explorer.projecting', { method: this.t(`explorer.layout.${method}`) }));
+		else if (this.state.layout === 'physics' && !p) el.setText(this.t('explorer.physicsLine', { method: this.t(`explorer.layout.${this.state.physics.anchorTo}`) }));
 		else if (p) {
 			const fmt = (x: number): string => x.toFixed(2);
 			el.setText(
@@ -661,7 +988,9 @@ export class ExplorerLeafView extends ItemView {
 		const result = this.current();
 		if (!result) return;
 		const tabs = side.createDiv({ cls: 'semantic-atlas-tabs', attr: { role: 'tablist' } });
+		if (this.state.panel === 'forces' && this.state.layout !== 'physics') this.state.panel = 'note';
 		for (const p of PANELS) {
+			if (p === 'forces' && this.state.layout !== 'physics') continue;
 			const b = tabs.createEl('button', { text: this.t(`explorer.panel.${p}`), attr: { role: 'tab', 'aria-selected': String(p === this.state.panel) } });
 			b.toggleClass('is-active', p === this.state.panel);
 			b.addEventListener('click', () => {
@@ -672,6 +1001,7 @@ export class ExplorerLeafView extends ItemView {
 		}
 		const body = side.createDiv({ attr: { role: 'tabpanel' } });
 		if (this.state.panel === 'note') this.renderCard(body, result);
+		else if (this.state.panel === 'forces') this.renderForces(body);
 		else this.renderSuggestions(body, result);
 		if (this.drift.path.length > 0) this.renderDrift(side);
 		side.scrollTop = scroll;

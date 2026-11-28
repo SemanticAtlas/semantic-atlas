@@ -14,3 +14,8 @@ declare module 'virtual:analysis-worker' {
 	const code: string;
 	export default code;
 }
+
+declare module 'virtual:physics-worker' {
+	const code: string;
+	export default code;
+}

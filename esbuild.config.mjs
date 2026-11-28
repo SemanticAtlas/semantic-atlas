@@ -13,11 +13,11 @@ const prod = process.argv[2] === 'production';
 
 // The workers (from @semanticatlas/core) are bundled on their own, then inlined in main.js
 // as source text and started from a blob URL: Obsidian installs a single main.js.
-const WORKERS = { 'embed-worker': '@semanticatlas/core/embed-worker', 'analysis-worker': '@semanticatlas/core/analysis-worker' };
+const WORKERS = { 'embed-worker': '@semanticatlas/core/embed-worker', 'analysis-worker': '@semanticatlas/core/analysis-worker', 'physics-worker': '@semanticatlas/core/physics-worker' };
 const embedWorker = {
 	name: 'workers',
 	setup(build) {
-		build.onResolve({ filter: /^virtual:(embed|analysis)-worker$/ }, (args) => ({ path: args.path.slice('virtual:'.length), namespace: 'worker' }));
+		build.onResolve({ filter: /^virtual:(embed|analysis|physics)-worker$/ }, (args) => ({ path: args.path.slice('virtual:'.length), namespace: 'worker' }));
 		build.onLoad({ filter: /.*/, namespace: 'worker' }, async (args) => {
 			const result = await esbuild.build({
 				entryPoints: [WORKERS[args.path]],

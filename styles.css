@@ -710,3 +710,21 @@
 	color: var(--text-accent);
 	text-decoration: underline;
 }
+
+.semantic-atlas-force {
+	display: grid;
+	grid-template-columns: 1fr minmax(6em, 1.2fr) 3em;
+	gap: var(--size-4-2);
+	align-items: center;
+	min-height: 32px;
+}
+
+.semantic-atlas-force:first-of-type {
+	grid-template-columns: 1fr minmax(6em, 1.5fr);
+}
+
+.semantic-atlas-force-value {
+	font-variant-numeric: tabular-nums;
+	text-align: end;
+	color: var(--text-muted);
+}
