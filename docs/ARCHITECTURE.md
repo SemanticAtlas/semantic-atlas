@@ -28,18 +28,21 @@ This page describes the code as it is. The target architecture is in [SPEC.md, s
 | `src/indexing/plan.ts` | Exclusions, order of work, settings hash | no |
 | `src/indexing/service.ts` | Semantic index: model download (requestUrl with Range), embedding worker, incremental indexing, search, related notes | yes |
 | `src/views/related.ts`, `search-modal.ts`, `model-modal.ts` | Related notes view, search, model and clear-data dialogs | yes |
+| `src/analysis/snapshot.ts`, `quality.ts`, `tables.ts`, `docs.ts` | Snapshot of an analysis and names given by hand, quality report, tables over time and against axes, text used for names | no |
+| `src/analysis/service.ts` | Runs the analysis in its worker after indexing, keeps the result and snapshot, renames clusters, embeds the axes | yes |
+| `src/views/landscape.ts` | Landscape view: map, clusters, over time, axes, quality panel | yes |
 
-The embedding worker (`@semanticatlas/core/embed-worker`) is bundled on its own by esbuild, inlined in `main.js` as text and started from a blob URL. The engine's `embed.wasm` is embedded (esbuild `binary` loader) and handed to the worker. The model files come from IndexedDB.
+The embedding worker (`@semanticatlas/core/embed-worker`) and the analysis worker (`@semanticatlas/core/analysis-worker`) are bundled on their own by esbuild, inlined in `main.js` as text and started from blob URLs. The analysis worker receives a copy of the engine's `engine.wasm`. The engine's `embed.wasm` is embedded (esbuild `binary` loader) and handed to the worker. The model files come from IndexedDB.
 
 The link graph uses `RelationsView` from `@semanticatlas/core`. The engine's WebAssembly module is embedded in `main.js` (esbuild `binary` loader) and loaded on first use, not at start-up. Both packages are git dependencies pinned to their distribution tags.
 
 ## Settings format (`data.json`)
 
 ```json
-{ "version": 2, "debug": false, "index": { "enabled": false, "onMobile": false, "titleWeight": 0.2, "maxChunkTokens": 256, "overlapTokens": 32, "minTokens": 8, "excludeFolders": [], "excludeTags": [], "includeCode": false, "dateProperty": "", "workers": 1 } }
+{ "version": 3, "debug": false, "index": { "enabled": false, "onMobile": false, "titleWeight": 0.2, "maxChunkTokens": 256, "overlapTokens": 32, "minTokens": 8, "excludeFolders": [], "excludeTags": [], "includeCode": false, "dateProperty": "", "workers": 1 }, "analysis": { "resolution": 1, "axes": [{ "name": "Music", "description": "instruments, jazz, concerts" }], "names": [{ "name": "My name", "anchors": ["Music/Jazz.md", "Music/Bebop.md"] }], "dateSource": "modified" } }
 ```
 
-- `version` (integer): schema version. Missing means version 0, migrated to 1 with the fields kept; version 1 is migrated to 2 by adding `index` with its defaults.
+- `version` (integer): schema version. Missing means version 0, migrated to 1 with the fields kept; version 1 is migrated to 2 by adding `index` with its defaults, and version 2 to 3 by adding `analysis`. `analysis.names` holds the names given by hand, each with the paths of the most central notes of its cluster (cluster identifiers are local to a device).
 - A version newer than the installed plugin is read but never overwritten, so a downgrade does not destroy settings.
 - A field of the wrong type is replaced by its default, and the corrected file is saved.
 - When `data.json` changes on disk (for example after a sync), the settings are reloaded.

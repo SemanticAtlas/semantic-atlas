@@ -6,7 +6,7 @@
  * downgrade does not destroy settings written by a later release.
  */
 
-export const SETTINGS_VERSION = 2;
+export const SETTINGS_VERSION = 3;
 
 export interface IndexSettings {
 	/** Index the vault (on desktop). Off until the user turns it on and the model is present. */
@@ -33,11 +33,38 @@ export interface IndexSettings {
 	workers: number;
 }
 
+export interface Axis {
+	name: string;
+	/** Free text describing the interest; embedded by the same model as the notes. */
+	description: string;
+}
+
+/** A cluster name given by hand, with the notes that identify its cluster. */
+export interface ManualName {
+	name: string;
+	/** Most central notes of the cluster when it was last analysed (paths). */
+	anchors: string[];
+}
+
+export type DateSource = 'property' | 'created' | 'modified';
+
+export interface AnalysisSettings {
+	/** Leiden resolution: larger values give smaller clusters (0.2 to 5). */
+	resolution: number;
+	/** Interest axes declared by the user. */
+	axes: Axis[];
+	/** Names given by hand; a name follows the cluster holding most of its anchors. */
+	names: ManualName[];
+	/** Date of a note for the time views. */
+	dateSource: DateSource;
+}
+
 export interface SemanticAtlasSettings {
 	version: typeof SETTINGS_VERSION;
 	/** Show debug and warning messages in the developer console. */
 	debug: boolean;
 	index: IndexSettings;
+	analysis: AnalysisSettings;
 }
 
 export const DEFAULT_INDEX_SETTINGS: Readonly<IndexSettings> = Object.freeze({
@@ -54,10 +81,18 @@ export const DEFAULT_INDEX_SETTINGS: Readonly<IndexSettings> = Object.freeze({
 	workers: 1,
 });
 
+export const DEFAULT_ANALYSIS_SETTINGS: Readonly<AnalysisSettings> = Object.freeze({
+	resolution: 1,
+	axes: [],
+	names: [],
+	dateSource: 'modified',
+});
+
 export const DEFAULT_SETTINGS: Readonly<SemanticAtlasSettings> = Object.freeze({
 	version: SETTINGS_VERSION,
 	debug: false,
 	index: DEFAULT_INDEX_SETTINGS,
+	analysis: DEFAULT_ANALYSIS_SETTINGS,
 });
 
 export interface MigrationResult {
@@ -84,6 +119,8 @@ const MIGRATIONS: ReadonlyArray<(raw: Raw) => Raw> = [
 	(raw) => ({ ...raw, version: 1 }),
 	// 1 -> 2: semantic index settings, with their defaults.
 	(raw) => ({ ...raw, version: 2, index: { ...DEFAULT_INDEX_SETTINGS } }),
+	// 2 -> 3: analysis settings (resolution, axes, manual names, date source).
+	(raw) => ({ ...raw, version: 3, analysis: { ...DEFAULT_ANALYSIS_SETTINGS } }),
 ];
 
 const bool = (v: unknown, d: boolean): boolean => (typeof v === 'boolean' ? v : d);
@@ -111,10 +148,33 @@ const normalizeIndex = (raw: unknown): IndexSettings => {
 	};
 };
 
+const DATE_SOURCES: readonly DateSource[] = ['property', 'created', 'modified'];
+
+const normalizeAnalysis = (raw: unknown): AnalysisSettings => {
+	const r = isRecord(raw) ? raw : {};
+	const d = DEFAULT_ANALYSIS_SETTINGS;
+	const axes = Array.isArray(r.axes)
+		? r.axes.filter((a): a is Axis => isRecord(a) && typeof a.name === 'string' && typeof a.description === 'string').map((a) => ({ name: a.name, description: a.description }))
+		: [];
+	const names = Array.isArray(r.names)
+		? r.names
+				.filter((n): n is { name: string; anchors: unknown[] } => isRecord(n) && typeof n.name === 'string' && n.name !== '' && Array.isArray(n.anchors))
+				.map((n) => ({ name: n.name, anchors: n.anchors.filter((a): a is string => typeof a === 'string') }))
+				.filter((n) => n.anchors.length > 0)
+		: [];
+	return {
+		resolution: num(r.resolution, d.resolution, 0.2, 5, false),
+		axes,
+		names,
+		dateSource: DATE_SOURCES.includes(r.dateSource as DateSource) ? (r.dateSource as DateSource) : d.dateSource,
+	};
+};
+
 const normalize = (raw: Raw): SemanticAtlasSettings => ({
 	version: SETTINGS_VERSION,
 	debug: typeof raw.debug === 'boolean' ? raw.debug : DEFAULT_SETTINGS.debug,
 	index: normalizeIndex(raw.index),
+	analysis: normalizeAnalysis(raw.analysis),
 });
 
 export function migrateSettings(stored: unknown): MigrationResult {

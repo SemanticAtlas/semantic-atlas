@@ -6,6 +6,8 @@ import { createLogger, type Logger } from './log';
 import { DEFAULT_SETTINGS, migrateSettings, type SemanticAtlasSettings } from './settings/schema';
 import { SemanticAtlasSettingTab } from './settings/tab';
 import { IndexingService, type IndexState } from './indexing/service';
+import { AnalysisService } from './analysis/service';
+import { LandscapeView, VIEW_TYPE_LANDSCAPE } from './views/landscape';
 import { ClearDataModal, ModelModal } from './views/model-modal';
 import { RelatedNotesView, VIEW_TYPE_RELATED } from './views/related';
 import { RelationsLeafView, VIEW_TYPE_RELATIONS, type RelationsViewState } from './views/relations';
@@ -19,6 +21,7 @@ export default class SemanticAtlasPlugin extends Plugin {
 	log: Logger = createLogger(() => this.settings.debug);
 	private atlasPromise: Promise<Atlas> | null = null;
 	index!: IndexingService;
+	analysis!: AnalysisService;
 	private statusBar: HTMLElement | null = null;
 	private changeTimers = new Map<string, number>();
 
@@ -76,13 +79,40 @@ export default class SemanticAtlasPlugin extends Plugin {
 				return true;
 			},
 		});
+		this.analysis = new AnalysisService({
+			app: this.app,
+			index: this.index,
+			settings: () => this.settings.analysis,
+			indexSettings: () => this.settings.index,
+			saveNames: async (names) => {
+				this.settings.analysis.names = names;
+				await this.saveSettings();
+			},
+			log: this.log,
+		});
+		this.registerView(VIEW_TYPE_LANDSCAPE, (leaf) => new LandscapeView(leaf, this));
+		this.addCommand({ id: 'open-landscape', name: this.t('commands.openLandscape'), callback: () => void this.openLandscape() });
+		this.addCommand({
+			id: 'update-analysis',
+			name: this.t('commands.updateAnalysis'),
+			checkCallback: (checking) => {
+				if (!this.index.isReady()) return false;
+				if (!checking) void this.analysis.run();
+				return true;
+			},
+		});
 		this.addCommand({ id: 'clear-all-data', name: this.t('commands.clearData'), callback: () => this.confirmClearData() });
 
 		if (!Platform.isMobile) {
 			this.statusBar = this.addStatusBarItem();
 			this.statusBar.addClass('semantic-atlas-status');
 		}
-		this.register(this.index.onChange((s) => this.showStatus(s)));
+		this.register(
+			this.index.onChange((s) => {
+				this.showStatus(s);
+				this.analysis.indexChanged();
+			}),
+		);
 
 		// Start-up work waits for the layout, and 'create' fires for every file while loading.
 		this.app.workspace.onLayoutReady(() => {
@@ -106,6 +136,7 @@ export default class SemanticAtlasPlugin extends Plugin {
 	override onunload(): void {
 		for (const timer of this.changeTimers.values()) window.clearTimeout(timer);
 		this.changeTimers.clear();
+		this.analysis.stop();
 		void this.index.stop();
 		this.log.debug('unloaded');
 	}
@@ -170,6 +201,7 @@ export default class SemanticAtlasPlugin extends Plugin {
 			this.settings.index.enabled = false;
 			await this.saveSettings();
 			await this.index.clearAll(models);
+			this.analysis.reset();
 		}).open();
 	}
 
@@ -178,6 +210,13 @@ export default class SemanticAtlasPlugin extends Plugin {
 		const leaf = workspace.getLeavesOfType(VIEW_TYPE_RELATED)[0] ?? workspace.getRightLeaf(false);
 		if (!leaf) return;
 		if (leaf.view.getViewType() !== VIEW_TYPE_RELATED) await leaf.setViewState({ type: VIEW_TYPE_RELATED, active: true });
+		await workspace.revealLeaf(leaf);
+	}
+
+	async openLandscape(): Promise<void> {
+		const { workspace } = this.app;
+		const leaf = workspace.getLeavesOfType(VIEW_TYPE_LANDSCAPE)[0] ?? workspace.getLeaf('tab');
+		if (leaf.view.getViewType() !== VIEW_TYPE_LANDSCAPE) await leaf.setViewState({ type: VIEW_TYPE_LANDSCAPE, active: true });
 		await workspace.revealLeaf(leaf);
 	}
 

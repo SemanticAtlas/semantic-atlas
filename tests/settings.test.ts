@@ -13,7 +13,7 @@ describe('migrateSettings', () => {
 	});
 
 	it('keeps valid current-version settings unchanged', () => {
-		const saved = { ...DEFAULT_SETTINGS, debug: true, index: { ...DEFAULT_SETTINGS.index } };
+		const saved = { ...DEFAULT_SETTINGS, debug: true, index: { ...DEFAULT_SETTINGS.index }, analysis: { ...DEFAULT_SETTINGS.analysis } };
 		const result = migrateSettings(saved);
 		expect(result.settings).toEqual(saved);
 		expect(result.changed).toBe(false);
@@ -60,7 +60,7 @@ describe('settings version 2 (semantic index)', () => {
 	it('migrates version 1 by adding the index settings with their defaults', () => {
 		const { settings, changed } = migrateSettings({ version: 1, debug: true });
 		expect(changed).toBe(true);
-		expect(settings).toMatchObject({ version: SETTINGS_VERSION, debug: true, index: DEFAULT_SETTINGS.index });
+		expect(settings).toMatchObject({ version: SETTINGS_VERSION, debug: true, index: DEFAULT_SETTINGS.index, analysis: DEFAULT_SETTINGS.analysis });
 	});
 
 	it('keeps valid index settings and repairs invalid ones', () => {
@@ -76,5 +76,42 @@ describe('settings version 2 (semantic index)', () => {
 		expect(settings.index.titleWeight).toBe(1);
 		expect(settings.index.maxChunkTokens).toBe(512);
 		expect(settings.index.workers).toBe(1);
+	});
+});
+
+describe('settings version 3 (analysis, axes, names)', () => {
+	it('migrates version 2 by adding the analysis section', () => {
+		const v2 = { version: 2, debug: false, index: { ...DEFAULT_SETTINGS.index, titleWeight: 0.4 } };
+		const { settings } = migrateSettings(v2);
+		expect(settings.version).toBe(SETTINGS_VERSION);
+		expect(settings.index.titleWeight).toBe(0.4);
+		expect(settings.analysis).toEqual(DEFAULT_SETTINGS.analysis);
+	});
+
+	it('keeps valid axes and names given by hand, drops malformed entries', () => {
+		const stored = {
+			...DEFAULT_SETTINGS,
+			analysis: {
+				...DEFAULT_SETTINGS.analysis,
+				axes: [{ name: 'Climate', description: 'climate change and energy' }, { name: 42 }, { name: 'Health', description: '' }],
+				names: [{ name: 'Sky', anchors: ['a.md', 'b.md', 3] }, { name: 4, anchors: [] }, { name: 'No anchors' }],
+				resolution: 1.5,
+				dateSource: 'property',
+			},
+		};
+		const { settings } = migrateSettings(stored);
+		expect(settings.analysis.axes).toEqual([
+			{ name: 'Climate', description: 'climate change and energy' },
+			{ name: 'Health', description: '' },
+		]);
+		expect(settings.analysis.names).toEqual([{ name: 'Sky', anchors: ['a.md', 'b.md'] }]);
+		expect(settings.analysis.resolution).toBe(1.5);
+		expect(settings.analysis.dateSource).toBe('property');
+	});
+
+	it('repairs an unknown date source and an out-of-range resolution', () => {
+		const { settings } = migrateSettings({ ...DEFAULT_SETTINGS, analysis: { ...DEFAULT_SETTINGS.analysis, dateSource: 'moon', resolution: 99 } });
+		expect(settings.analysis.dateSource).toBe(DEFAULT_SETTINGS.analysis.dateSource);
+		expect(settings.analysis.resolution).toBe(5);
 	});
 });

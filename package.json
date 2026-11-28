@@ -47,7 +47,7 @@
 		"vitest": "5.1.2"
 	},
 	"dependencies": {
-		"@semanticatlas/core": "github:SemanticAtlas/semantic-atlas-core#core-dist-v0.3.0",
-		"@semanticatlas/engine": "github:SemanticAtlas/semantic-atlas-engine#engine-dist-v0.2.0"
+		"@semanticatlas/core": "github:SemanticAtlas/semantic-atlas-core#core-dist-v0.5.1",
+		"@semanticatlas/engine": "github:SemanticAtlas/semantic-atlas-engine#engine-dist-v0.3.0"
 	}
 }

@@ -15,9 +15,10 @@ Everything is computed on your device. By default, no data leaves it.
 
 > **Status: early development.** Available today:
 > - the [link graph](docs/LINK-GRAPH.md), global or local, with notes not created yet as an option;
-> - the [semantic index](docs/SEMANTIC-INDEX.md): related notes, search by meaning, random close note.
+> - the [semantic index](docs/SEMANTIC-INDEX.md): related notes, search by meaning, random close note;
+> - the [landscape](docs/LANDSCAPE.md): map of the themes, clusters you can rename, themes over time, interest axes and the quality of the analysis.
 >
-> Themes, maps and missing links are not available yet. See [the specification](docs/SPEC.md) and the [changelog](CHANGELOG.md).
+> Missing links and the free exploration views are not available yet. See [the specification](docs/SPEC.md) and the [changelog](CHANGELOG.md).
 
 ## Installation
 
@@ -91,6 +92,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - index settings (version 2, migrated): title weight, passage length, excluded folders and tags, code blocks, mobile;
   - status bar progress;
   - tested in Obsidian 1.15.1 with 516 notes.
+- Landscape view (command "Open the landscape", see `docs/LANDSCAPE.md`): map of the notes by cluster, cluster cards with renaming (a name given by hand follows the most central notes of its cluster, so it is kept across devices and after clearing the data), notes per cluster over time (year, quarter or month, by modification, creation or a date property), interest axes against clusters, and a "Quality of the analysis" panel (modularity, silhouette, stability, hubness, near duplicates, most isolated notes, with indicative thresholds). The analysis (Leiden clusters by consensus, names, roles, centralities, layout) runs in a background worker after indexing and keeps identifiers, names and positions from one run to the next; command "Update the analysis". Settings version 3 (migrated): cluster size, date source and property, interest axes, names given by hand. Tested in Obsidian 1.15.1 with 516 notes (analysis in under a second).
 - Link graph view (commands "Open link graph" and "Open local link graph"): explicit links, embeds and front-matter links from the metadata cache. It is laid out by the Semantic Atlas engine (WebAssembly, embedded) and offers a local graph by depth, optional ghost notes for links to notes not created yet, an accessible table of links, keyboard navigation and theme colours. The view state is saved. See `docs/LINK-GRAPH.md`. Tested in Obsidian 1.15.1 (desktop, light and dark themes, plugin reload).
 
 
@@ -126,18 +128,21 @@ This page describes the code as it is. The target architecture is in [SPEC.md, s
 | `src/indexing/plan.ts` | Exclusions, order of work, settings hash | no |
 | `src/indexing/service.ts` | Semantic index: model download (requestUrl with Range), embedding worker, incremental indexing, search, related notes | yes |
 | `src/views/related.ts`, `search-modal.ts`, `model-modal.ts` | Related notes view, search, model and clear-data dialogs | yes |
+| `src/analysis/snapshot.ts`, `quality.ts`, `tables.ts`, `docs.ts` | Snapshot of an analysis and names given by hand, quality report, tables over time and against axes, text used for names | no |
+| `src/analysis/service.ts` | Runs the analysis in its worker after indexing, keeps the result and snapshot, renames clusters, embeds the axes | yes |
+| `src/views/landscape.ts` | Landscape view: map, clusters, over time, axes, quality panel | yes |
 
-The embedding worker (`@semanticatlas/core/embed-worker`) is bundled on its own by esbuild, inlined in `main.js` as text and started from a blob URL. The engine's `embed.wasm` is embedded (esbuild `binary` loader) and handed to the worker. The model files come from IndexedDB.
+The embedding worker (`@semanticatlas/core/embed-worker`) and the analysis worker (`@semanticatlas/core/analysis-worker`) are bundled on their own by esbuild, inlined in `main.js` as text and started from blob URLs. The analysis worker receives a copy of the engine's `engine.wasm`. The engine's `embed.wasm` is embedded (esbuild `binary` loader) and handed to the worker. The model files come from IndexedDB.
 
 The link graph uses `RelationsView` from `@semanticatlas/core`. The engine's WebAssembly module is embedded in `main.js` (esbuild `binary` loader) and loaded on first use, not at start-up. Both packages are git dependencies pinned to their distribution tags.
 
 ## Settings format (`data.json`)
 
 ```json
-{ "version": 2, "debug": false, "index": { "enabled": false, "onMobile": false, "titleWeight": 0.2, "maxChunkTokens": 256, "overlapTokens": 32, "minTokens": 8, "excludeFolders": [], "excludeTags": [], "includeCode": false, "dateProperty": "", "workers": 1 } }
+{ "version": 3, "debug": false, "index": { "enabled": false, "onMobile": false, "titleWeight": 0.2, "maxChunkTokens": 256, "overlapTokens": 32, "minTokens": 8, "excludeFolders": [], "excludeTags": [], "includeCode": false, "dateProperty": "", "workers": 1 }, "analysis": { "resolution": 1, "axes": [{ "name": "Music", "description": "instruments, jazz, concerts" }], "names": [{ "name": "My name", "anchors": ["Music/Jazz.md", "Music/Bebop.md"] }], "dateSource": "modified" } }
 ```
 
-- `version` (integer): schema version. Missing means version 0, migrated to 1 with the fields kept; version 1 is migrated to 2 by adding `index` with its defaults.
+- `version` (integer): schema version. Missing means version 0, migrated to 1 with the fields kept; version 1 is migrated to 2 by adding `index` with its defaults, and version 2 to 3 by adding `analysis`. `analysis.names` holds the names given by hand, each with the paths of the most central notes of its cluster (cluster identifiers are local to a device).
 - A version newer than the installed plugin is read but never overwritten, so a downgrade does not destroy settings.
 - A field of the wrong type is replaced by its default, and the corrected file is saved.
 - When `data.json` changes on disk (for example after a sync), the settings are reloaded.
@@ -152,6 +157,62 @@ The link graph uses `RelationsView` from `@semanticatlas/core`. The engine's Web
 # Dependency maintenance
 
 Dependabot checks npm dependencies and GitHub Actions workflow references weekly using `.github/dependabot.yml`. It proposes updates as pull requests; review the changes and run CI before merging. The core and engine are pinned to GitHub distribution tags, so check their releases and compatibility when updating those dependencies.
+
+
+<!-- docs/LANDSCAPE.md -->
+
+# Landscape
+
+The landscape shows the vault by meaning: the themes your notes form, how they sit next to each other, how they grew over time and how close they are to the interests you declare. It needs the [semantic index](SEMANTIC-INDEX.md); nothing leaves your device and no note is ever changed.
+
+Run **Open the landscape**. The analysis runs by itself in the background a few seconds after the index is ready, then 30 seconds after the index last changed. **Update the analysis** (command, or the button of the view) runs it now. It needs at least 10 indexed notes.
+
+## Tabs
+
+| Tab | What it shows |
+|---|---|
+| **Map** | Every note as a point, coloured by cluster; close points have close meanings. The cluster names sit at their centres. Click a note to open it; select a cluster in the legend to show it alone; filter by title words. Zoom with the wheel or pinch, move by dragging; the arrow keys move between notes and Enter opens one. The list under the map gives the same content to the keyboard and screen readers. Positions start from the previous ones, so the map changes little when a few notes change. |
+| **Clusters** | One card per cluster: its name, size, stability, the notes that connect it to other clusters, its distinctive terms and its most central notes. The pencil button renames it; a name given by hand can be given back to the keyword name. |
+| **Over time** | Notes per cluster and per year, quarter or month, by the date chosen in the settings (last modification by default, creation, or a property of the notes). Undated notes are counted apart. |
+| **Axes** | For each interest axis declared in the settings, how close each cluster is (mean centile of its notes) and the notes closest to the axis. |
+
+The **Quality of the analysis** panel, under the tabs, tells how far the clusters can be trusted:
+
+- **modularity**: how much more the notes resemble their own cluster than the others; below 0.3 the themes are weakly separated, above 0.5 they are clear;
+- **silhouette**: whether each note is closer to its cluster than to the next one; text embeddings usually give low values, below 0.05 the clusters overlap a lot;
+- **stability**: agreement between ten runs of the clustering with different seeds; a cluster below 60 % is marked unstable, its boundaries are uncertain;
+- **hubness**: how much a few notes appear in everyone's neighbours, and its correction;
+- **near duplicates**: pairs of notes almost identical in meaning; with a multilingual model a note and its translation appear here too;
+- the **most isolated notes**, far from any other.
+
+These thresholds are rules of thumb, not statistical tests. See [METRICS.md](METRICS.md) and the core's `docs/ANALYSIS.md` for the definitions.
+
+## Settings
+
+Under **Landscape** in the settings:
+
+- **Cluster size**: the resolution of the clustering, 0.2 to 5 (1 by default); larger values give more, smaller clusters.
+- **Date of a note**: last modification, creation, or a property (then give its name, for example `created`).
+- **Interest axes**: a name and a few words for each theme you want to follow. Each axis is embedded by the same model as the notes, on this device.
+
+## Names
+
+Clusters are named by their most distinctive words (class-based TF-IDF on titles, headings, tags and text), without a language model. Words found in a quarter of the notes and in nearly every cluster (a title suffix, a template heading) are ignored.
+
+A cluster keeps its identifier, colour and keyword name from one analysis to the next as long as it keeps most of its notes (at least 60 % in common).
+
+A name given by hand is saved in the plugin's settings with the five most central notes of its cluster (its anchors), so it follows the vault on your other devices and survives clearing the data. After each analysis, it goes to the cluster that holds most of its anchors, and the anchors are updated. It is dropped when its anchors end up spread over several clusters (the theme split), or when two named clusters merge (the name with more anchors in the merged cluster stays).
+
+## How it works
+
+The analysis runs in a background worker, with the Semantic Atlas engine (WebAssembly):
+
+1. graph of the 5 to 15 nearest neighbours of each note, corrected for hubs (local scaling);
+2. Leiden clustering (modularity), consensus of ten runs, small clusters merged into their closest neighbour;
+3. names, roles (core, connector, peripheral), centralities on the explicit links (PageRank, betweenness, core number, articulation points);
+4. map layout with a force simulation of the semantic graph.
+
+It takes about a second for 500 notes. The last analysis (clusters, names and positions) is kept in this device's index database, to keep identifiers and the map stable; it is deleted with the other data by **Clear all data of the plugin**.
 
 
 <!-- docs/LINK-GRAPH.md -->

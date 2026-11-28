@@ -9,3 +9,8 @@ declare module 'virtual:embed-worker' {
 	const code: string;
 	export default code;
 }
+
+declare module 'virtual:analysis-worker' {
+	const code: string;
+	export default code;
+}

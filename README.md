@@ -13,9 +13,10 @@ Everything is computed on your device. By default, no data leaves it.
 
 > **Status: early development.** Available today:
 > - the [link graph](docs/LINK-GRAPH.md), global or local, with notes not created yet as an option;
-> - the [semantic index](docs/SEMANTIC-INDEX.md): related notes, search by meaning, random close note.
+> - the [semantic index](docs/SEMANTIC-INDEX.md): related notes, search by meaning, random close note;
+> - the [landscape](docs/LANDSCAPE.md): map of the themes, clusters you can rename, themes over time, interest axes and the quality of the analysis.
 >
-> Themes, maps and missing links are not available yet. See [the specification](docs/SPEC.md) and the [changelog](CHANGELOG.md).
+> Missing links and the free exploration views are not available yet. See [the specification](docs/SPEC.md) and the [changelog](CHANGELOG.md).
 
 ## Installation
 

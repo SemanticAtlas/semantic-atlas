@@ -89,6 +89,8 @@ export class IndexingService {
 	private textIndex = new TextIndex();
 	private readonly chunks = new Map<string, ChunkRecord[]>();
 	private readonly pending = new Set<string>();
+	/** Increases whenever a note vector is added or removed (the analysis is redone when it changed). */
+	private revisionCount = 0;
 	private running = false;
 	private paused = false;
 	private stopped = false;
@@ -313,6 +315,7 @@ export class IndexingService {
 
 	private addToMemory(r: NoteRecord): void {
 		this.removeFromMemory(r.id);
+		this.revisionCount++;
 		this.noteIndex.set(r.id, r.vector);
 		r.chunks.forEach((c, i) => {
 			this.chunkIndex.set(`${r.id}${CHUNK_SEP}${i}`, c.vector);
@@ -321,6 +324,7 @@ export class IndexingService {
 	}
 
 	private removeFromMemory(id: string): void {
+		if (this.noteIndex.has(id)) this.revisionCount++;
 		this.noteIndex.delete(id);
 		const old = this.chunks.get(id) ?? [];
 		old.forEach((_, i) => {
@@ -475,8 +479,36 @@ export class IndexingService {
 		return this.noteIndex.search(v, k, (other) => other !== id).map((h) => ({ ...h, passage: this.bestPassage(h.id, v) }));
 	}
 
+	/** Changes whenever the set of note vectors changes. */
+	revision(): number {
+		return this.revisionCount;
+	}
+
 	hasNote(id: string): boolean {
 		return this.noteIndex.has(id);
+	}
+
+	/** Ids and note vectors of every indexed note (n x dims, row by row). */
+	noteVectors(): { ids: string[]; vectors: Float32Array; dims: number } {
+		const ids = [...this.chunks.keys()].filter((id) => this.noteIndex.has(id)).sort();
+		const dims = this.spec.dims;
+		const vectors = new Float32Array(ids.length * dims);
+		ids.forEach((id, i) => {
+			const v = this.noteIndex.get(id);
+			if (v) vectors.set(v, i * dims);
+		});
+		return { ids, vectors, dims };
+	}
+
+	/** Embeds a free text (an interest axis, a query). */
+	async embedText(text: string): Promise<Float32Array> {
+		if (!this.client) throw new Error('The semantic index is not ready');
+		return this.client.embedQuery(text);
+	}
+
+	/** The index store of this vault (for the analysis snapshot), when open. */
+	indexStore(): IndexStore | null {
+		return this.store;
 	}
 
 	/** Hybrid search: passages by meaning and words (BM25), fused by rank. */

@@ -11,15 +11,16 @@ Semantic Atlas - bundled file, see the source at https://github.com/SemanticAtla
 
 const prod = process.argv[2] === 'production';
 
-// The embedding worker (from @semanticatlas/core) is bundled on its own, then inlined in main.js
+// The workers (from @semanticatlas/core) are bundled on their own, then inlined in main.js
 // as source text and started from a blob URL: Obsidian installs a single main.js.
+const WORKERS = { 'embed-worker': '@semanticatlas/core/embed-worker', 'analysis-worker': '@semanticatlas/core/analysis-worker' };
 const embedWorker = {
-	name: 'embed-worker',
+	name: 'workers',
 	setup(build) {
-		build.onResolve({ filter: /^virtual:embed-worker$/ }, () => ({ path: 'embed-worker', namespace: 'embed-worker' }));
-		build.onLoad({ filter: /.*/, namespace: 'embed-worker' }, async () => {
+		build.onResolve({ filter: /^virtual:(embed|analysis)-worker$/ }, (args) => ({ path: args.path.slice('virtual:'.length), namespace: 'worker' }));
+		build.onLoad({ filter: /.*/, namespace: 'worker' }, async (args) => {
 			const result = await esbuild.build({
-				entryPoints: ['@semanticatlas/core/embed-worker'],
+				entryPoints: [WORKERS[args.path]],
 				bundle: true,
 				format: 'iife',
 				platform: 'browser',
