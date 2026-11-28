@@ -53,6 +53,10 @@ From a tab, notes open in a new tab; from the sidebar, they open in the main are
 - **Reduced motion**: with your system's reduced-motion setting, the layout is computed out of sight and only the final state is drawn. Otherwise the animation stops as soon as the layout is stable, and nothing runs at rest.
 - **Engine**: the layout is computed by the Semantic Atlas engine (Rust compiled to WebAssembly), embedded in the plugin. Nothing is downloaded.
 
+## Tested
+
+In Obsidian 1.15.1 (desktop, Linux) on a generated test vault: global and local graphs, ghost notes, saved view state, light and dark themes, sidebar and main area, reloading the plugin (nothing left behind), with no console error. Not tested yet: mobile, popout windows, large vaults.
+
 ## Limits of this version
 
 - The drawing is Canvas 2D and the simulation runs in the interface thread. That suits a few thousand notes; larger vaults will get WebGL and a worker.

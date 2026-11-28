@@ -21,6 +21,11 @@
 	height: 100%;
 }
 
+/* In a sidebar, match its background so the graph does not stand out as a white block. */
+.mod-sidedock .semantic-atlas-relations {
+	--sa-background: var(--background-secondary);
+}
+
 .semantic-atlas-toolbar {
 	display: flex;
 	flex-wrap: wrap;
