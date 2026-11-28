@@ -13,7 +13,7 @@ describe('migrateSettings', () => {
 	});
 
 	it('keeps valid current-version settings unchanged', () => {
-		const saved = { version: SETTINGS_VERSION, debug: true };
+		const saved = { ...DEFAULT_SETTINGS, debug: true, index: { ...DEFAULT_SETTINGS.index } };
 		const result = migrateSettings(saved);
 		expect(result.settings).toEqual(saved);
 		expect(result.changed).toBe(false);
@@ -21,7 +21,7 @@ describe('migrateSettings', () => {
 
 	it('migrates unversioned data (version 0) to the current version', () => {
 		const result = migrateSettings({ debug: true });
-		expect(result.settings).toEqual({ version: SETTINGS_VERSION, debug: true });
+		expect(result.settings).toEqual({ ...DEFAULT_SETTINGS, debug: true });
 		expect(result.changed).toBe(true);
 	});
 
@@ -53,5 +53,28 @@ describe('migrateSettings', () => {
 				if (!readOnly) expect(settings.version).toBe(SETTINGS_VERSION);
 			}),
 		);
+	});
+});
+
+describe('settings version 2 (semantic index)', () => {
+	it('migrates version 1 by adding the index settings with their defaults', () => {
+		const { settings, changed } = migrateSettings({ version: 1, debug: true });
+		expect(changed).toBe(true);
+		expect(settings).toMatchObject({ version: SETTINGS_VERSION, debug: true, index: DEFAULT_SETTINGS.index });
+	});
+
+	it('keeps valid index settings and repairs invalid ones', () => {
+		const stored = { ...DEFAULT_SETTINGS, index: { ...DEFAULT_SETTINGS.index, titleWeight: 0.5, excludeFolders: ['Archive'], maxChunkTokens: 'big' } };
+		const { settings } = migrateSettings(stored);
+		expect(settings.index.titleWeight).toBe(0.5);
+		expect(settings.index.excludeFolders).toEqual(['Archive']);
+		expect(settings.index.maxChunkTokens).toBe(DEFAULT_SETTINGS.index.maxChunkTokens);
+	});
+
+	it('clamps numbers into their allowed range', () => {
+		const { settings } = migrateSettings({ ...DEFAULT_SETTINGS, index: { ...DEFAULT_SETTINGS.index, titleWeight: 3, maxChunkTokens: 5000, workers: 0 } });
+		expect(settings.index.titleWeight).toBe(1);
+		expect(settings.index.maxChunkTokens).toBe(512);
+		expect(settings.index.workers).toBe(1);
 	});
 });
