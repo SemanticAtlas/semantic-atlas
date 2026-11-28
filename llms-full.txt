@@ -93,7 +93,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - index settings (version 2, migrated): title weight, passage length, excluded folders and tags, code blocks, mobile;
   - status bar progress;
   - tested in Obsidian 1.15.1 with 516 notes.
-- Explorer view (commands "Open the explorer" and "Open in the explorer, centred on this note", see `docs/EXPLORER.md`): notes placed by meaning, colour by cluster, folder, main tag, role, bridge, isolation, precursor, recent activity, date, relevance or page rank (missing values in grey), size by links, page rank, centrality or recent activity, links by kind, interactive legend, card of the selected note, drift through the closest notes (0.1 to 10 s per step, path copied as links). Suggested links with their reasons (similarity, shared words, common neighbours, shared tags, closest passages) and three actions (link, not related, ignore), remembered in the settings; the score is checked on the vault's own links and combined with shared neighbours and tags only when that wins. Uses @semanticatlas/core 0.6.0.
+- Explorer view (commands "Open the explorer" and "Open in the explorer, centred on this note", see `docs/EXPLORER.md`): notes placed by meaning, colour by cluster, folder, main tag, role, bridge, isolation, precursor, recent activity, date, relevance or page rank (missing values in grey), size by links, page rank, centrality or recent activity, links by kind, interactive legend, card of the selected note, drift through the closest notes (0.1 to 10 s per step, path copied as links), sub-maps of a cluster, folder, main tag, the notes shown or a drift path (20 to 2,000 notes, own clusters and suggestions, trail of levels). Suggested links with their reasons (similarity, shared words, common neighbours, shared tags, closest passages) and three actions (link, not related, ignore), remembered in the settings; the score is checked on the vault's own links and combined with shared neighbours and tags only when that wins. Uses @semanticatlas/core 0.6.0.
 - Landscape view (command "Open the landscape", see `docs/LANDSCAPE.md`): map of the notes by cluster, cluster cards with renaming (a name given by hand follows the most central notes of its cluster, so it is kept across devices and after clearing the data), notes per cluster over time (year, quarter or month, by modification, creation or a date property), interest axes against clusters, and a "Quality of the analysis" panel (modularity, silhouette, stability, hubness, near duplicates, most isolated notes, with indicative thresholds). The analysis (Leiden clusters by consensus, names, roles, centralities, layout) runs in a background worker after indexing and keeps identifiers, names and positions from one run to the next; command "Update the analysis". Settings version 3 (migrated): cluster size, date source and property, interest axes, names given by hand. Tested in Obsidian 1.15.1 with 516 notes (analysis in under a second).
 - Link graph view (commands "Open link graph" and "Open local link graph"): explicit links, embeds and front-matter links from the metadata cache. It is laid out by the Semantic Atlas engine (WebAssembly, embedded) and offers a local graph by depth, optional ghost notes for links to notes not created yet, an accessible table of links, keyboard navigation and theme colours. The view state is saved. See `docs/LINK-GRAPH.md`. Tested in Obsidian 1.15.1 (desktop, light and dark themes, plugin reload).
 
@@ -133,6 +133,7 @@ This page describes the code as it is. The target architecture is in [SPEC.md, s
 | `src/analysis/snapshot.ts`, `quality.ts`, `tables.ts`, `docs.ts` | Snapshot of an analysis and names given by hand, quality report, tables over time and against axes, text used for names | no |
 | `src/analysis/service.ts` | Runs the analysis in its worker after indexing, keeps the result and snapshot, renames clusters, embeds the axes | yes |
 | `src/views/landscape.ts` | Landscape view: map, clusters, over time, axes, quality panel | yes |
+| `src/explorer/submap.ts` | Notes of a sub-map (cluster, folder, tag, notes shown, drift path; 20 to 2,000) | no |
 | `src/explorer/variables.ts` | Values of "Colour by" and "Size by" for each note, shared words of two notes | no |
 | `src/views/explorer.ts` | Explorer view: map, card, suggested links and their actions, drift | yes |
 
@@ -201,9 +202,13 @@ Your decisions are saved in the plugin's settings (they follow renamed notes) an
 
 **Drift** walks from the selected note (or a random one) to the most similar note not visited yet, one step every 0.1 to 10 seconds (**Step**); the map follows. The path is listed with the similarity of each step and can be copied as a list of links.
 
+## Sub-maps
+
+**Sub-map** maps a part of the vault on its own, with its own clusters, names, layout and suggested links: the cluster, folder or main tag of the selected note, the notes shown (after a filter or a legend selection), or the drift path. A sub-map holds 20 to 2,000 notes, and can be split again. The trail above the map goes back to any level. Sub-maps are computed on demand and not saved; names given by hand apply to the whole vault's clusters only.
+
 ## Coming next
 
-Projections (t-SNE, UMAP, PaCMAP) with their measured quality, and sub-maps of a cluster, folder, tag, search or drift. Today the map uses the landscape's layout.
+Projections (t-SNE, UMAP, PaCMAP) with their measured quality. Today the map uses the landscape's layout.
 
 
 <!-- docs/LANDSCAPE.md -->

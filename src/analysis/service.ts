@@ -155,9 +155,29 @@ export class AnalysisService {
 		return client;
 	}
 
-	private async analyse(): Promise<{ result: AnalysisResult; ms: number }> {
+	/**
+	 * Analyses a part of the vault on its own (a sub-map): its own clusters, names, layout and
+	 * suggested links. Nothing is saved.
+	 */
+	async analyseSubset(subset: readonly string[]): Promise<AnalysisResult> {
+		const { result } = await this.analyse(new Set(subset));
+		return result;
+	}
+
+	private async analyse(subset?: ReadonlySet<string>): Promise<{ result: AnalysisResult; ms: number }> {
 		const { app, index } = this.deps;
-		const { ids, vectors, dims } = index.noteVectors();
+		const all = index.noteVectors();
+		const keep = subset ? all.ids.map((id) => subset.has(id)) : null;
+		const ids = keep ? all.ids.filter((_, i) => keep[i]) : all.ids;
+		const dims = all.dims;
+		let vectors = all.vectors;
+		if (keep) {
+			vectors = new Float32Array(ids.length * dims);
+			let row = 0;
+			keep.forEach((k, i) => {
+				if (k) vectors.set(all.vectors.subarray(i * dims, (i + 1) * dims), dims * row++);
+			});
+		}
 		const docs: NoteDoc[] = [];
 		const tags: string[][] = [];
 		const texts = new Map<string, string>();
@@ -173,15 +193,17 @@ export class AnalysisService {
 			texts.set(id, text);
 			for (const w of new Set(tokenize(text))) docFreq.set(w, (docFreq.get(w) ?? 0) + 1);
 		}
-		this.texts = texts;
-		this.docFreq = docFreq;
+		if (!subset) {
+			this.texts = texts;
+			this.docFreq = docFreq;
+		}
 		const known = new Set(ids);
 		const relations = collectRelations(
 			readNotes(app).filter((n) => known.has(n.path)),
 			linkResolver(app),
 		);
 		const settings = this.deps.settings();
-		const previous = toPrevious((await index.indexStore()?.analysis()) ?? null);
+		const previous = subset ? undefined : toPrevious((await index.indexStore()?.analysis()) ?? null);
 		const client = await this.engineClient();
 		return client.analyze(
 			{ ids, vectors, dims, docs, links: relations.edges, tags },

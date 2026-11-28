@@ -34,6 +34,10 @@ Your decisions are saved in the plugin's settings (they follow renamed notes) an
 
 **Drift** walks from the selected note (or a random one) to the most similar note not visited yet, one step every 0.1 to 10 seconds (**Step**); the map follows. The path is listed with the similarity of each step and can be copied as a list of links.
 
+## Sub-maps
+
+**Sub-map** maps a part of the vault on its own, with its own clusters, names, layout and suggested links: the cluster, folder or main tag of the selected note, the notes shown (after a filter or a legend selection), or the drift path. A sub-map holds 20 to 2,000 notes, and can be split again. The trail above the map goes back to any level. Sub-maps are computed on demand and not saved; names given by hand apply to the whole vault's clusters only.
+
 ## Coming next
 
-Projections (t-SNE, UMAP, PaCMAP) with their measured quality, and sub-maps of a cluster, folder, tag, search or drift. Today the map uses the landscape's layout.
+Projections (t-SNE, UMAP, PaCMAP) with their measured quality. Today the map uses the landscape's layout.

@@ -4,7 +4,7 @@
  * through the closest notes, and the card of the selected note. Display choices are saved with
  * the view. Nothing here writes to a note, except the "Link" action, on click.
  */
-import { ItemView, Notice, TFile, setIcon, type ViewStateResult, type WorkspaceLeaf } from 'obsidian';
+import { ItemView, Menu, Notice, TFile, setIcon, type ViewStateResult, type WorkspaceLeaf } from 'obsidian';
 import {
 	ExplorerView,
 	categoricalColours,
@@ -24,6 +24,7 @@ import type SemanticAtlasPlugin from '../main';
 import type { MessageKey } from '../i18n';
 import { collectRelations } from '../adapter/collect';
 import { linkResolver, readNotes } from '../adapter/vault';
+import { SUBMAP_KINDS, SUBMAP_MAX, SUBMAP_MIN, subsetFor, type SubmapKind } from '../explorer/submap';
 import { CATEGORY_BY, NUMBER_BY, SIZE_BY, categoryValues, isCategory, numericValues, sizeValues, type ColourBy, type SizeBy, type VariableContext } from '../explorer/variables';
 
 export const VIEW_TYPE_EXPLORER = 'semantic-atlas-explorer';
@@ -53,12 +54,18 @@ export class ExplorerLeafView extends ItemView {
 	private toolbar: HTMLElement | null = null;
 	private message: HTMLElement | null = null;
 	private side: HTMLElement | null = null;
-	private shown: AnalysisResult | null = null;
+	/** The analysis of the whole vault. */
+	private main: AnalysisResult | null = null;
+	/** Sub-maps opened from it, the last one shown. */
+	private levels: { label: string; result: AnalysisResult }[] = [];
+	private crumbs: HTMLElement | null = null;
 	private ids: string[] = [];
 	private selected: string | null = null;
 	private pendingFocus: string | null = null;
 	private drift: { timer: number | null; path: { id: string; similarity: number }[] } = { timer: null, path: [] };
 	private ticket = 0;
+	/** Fit the camera after the next map update (a new level). */
+	private fitNext = false;
 
 	constructor(
 		leaf: WorkspaceLeaf,
@@ -110,6 +117,8 @@ export class ExplorerLeafView extends ItemView {
 		contentEl.addClass('semantic-atlas-explorer');
 		this.toolbar = contentEl.createDiv({ cls: 'semantic-atlas-toolbar' });
 		this.message = contentEl.createEl('p', { cls: 'semantic-atlas-message', attr: { 'aria-live': 'polite' } });
+		this.crumbs = contentEl.createEl('nav', { cls: 'semantic-atlas-crumbs', attr: { 'aria-label': this.plugin.t('explorer.submap.crumbs') } });
+		this.crumbs.hide();
 		const main = contentEl.createDiv({ cls: 'semantic-atlas-explorer-main' });
 		const host = main.createDiv({ cls: 'semantic-atlas-explorer-map' });
 		this.side = main.createDiv({ cls: 'semantic-atlas-explorer-side' });
@@ -183,6 +192,88 @@ export class ExplorerLeafView extends ItemView {
 		this.app.workspace.requestSaveLayout();
 	}
 
+	/** The result shown: the last sub-map, or the whole vault. */
+	private current(): AnalysisResult | null {
+		return this.levels[this.levels.length - 1]?.result ?? this.main;
+	}
+
+	// ---- sub-maps ---------------------------------------------------------------------------
+
+	private async openSubmap(kind: SubmapKind): Promise<void> {
+		const result = this.current();
+		if (!result) return;
+		const label = kind === 'path' ? this.t('explorer.submap.pathLabel') : this.t('explorer.submap.shownLabel');
+		const subset = subsetFor(kind, {
+			selected: this.selected,
+			result,
+			facts: this.plugin.analysis.facts(),
+			shown: this.explorer?.visibleIds() ?? [],
+			path: this.drift.path.map((p) => p.id),
+			label,
+		});
+		if ('error' in subset) {
+			new Notice(
+				subset.error === 'noSelection'
+					? this.t('explorer.submap.noSelection')
+					: this.t(subset.error === 'tooFew' ? 'explorer.submap.tooFew' : 'explorer.submap.tooMany', { count: subset.count ?? 0, min: SUBMAP_MIN, max: SUBMAP_MAX }),
+			);
+			return;
+		}
+		const notice = new Notice(this.t('explorer.submap.computing', { count: subset.ids.length }), 0);
+		try {
+			const sub = await this.plugin.analysis.analyseSubset(subset.ids);
+			if (sub.skipped) {
+				new Notice(this.t('explorer.submap.tooFew', { count: subset.ids.length, min: SUBMAP_MIN, max: SUBMAP_MAX }));
+				return;
+			}
+			this.stopDrift(false);
+			this.drift.path = [];
+			this.levels.push({ label: subset.label, result: sub });
+			if (this.selected && !sub.notes.has(this.selected)) this.selected = null;
+			this.renderLevel();
+		} catch (error) {
+			new Notice(this.t('landscape.error', { message: error instanceof Error ? error.message : String(error) }));
+		} finally {
+			notice.hide();
+		}
+	}
+
+	/** Goes back to level `depth` (0: the whole vault). */
+	private goToLevel(depth: number): void {
+		this.stopDrift(false);
+		this.drift.path = [];
+		this.levels = this.levels.slice(0, depth);
+		this.renderLevel();
+	}
+
+	private renderLevel(): void {
+		this.renderCrumbs();
+		this.renderToolbar(this.current() !== null);
+		this.fitNext = true;
+		this.renderMap();
+		this.renderSide();
+	}
+
+	private renderCrumbs(): void {
+		const el = this.crumbs;
+		if (!el) return;
+		el.empty();
+		el.toggle(this.levels.length > 0);
+		if (this.levels.length === 0) return;
+		const names = [this.t('explorer.submap.vault'), ...this.levels.map((l) => l.label)];
+		names.forEach((name, depth) => {
+			if (depth > 0) el.createSpan({ text: ' › ', attr: { 'aria-hidden': 'true' } });
+			if (depth === names.length - 1) {
+				el.createSpan({ text: name, attr: { 'aria-current': 'page' } });
+			} else {
+				const b = el.createEl('button', { text: name, cls: 'semantic-atlas-crumb' });
+				b.addEventListener('click', () => {
+					this.goToLevel(depth);
+				});
+			}
+		});
+	}
+
 	// ---- rendering --------------------------------------------------------------------------
 
 	private render(full: boolean): void {
@@ -190,8 +281,8 @@ export class ExplorerLeafView extends ItemView {
 		const usable = result && !result.skipped ? result : null;
 		this.renderMessage(usable);
 		this.renderToolbar(usable !== null);
-		if (full || usable !== this.shown) {
-			this.shown = usable;
+		if (full || usable !== this.main) {
+			this.main = usable;
 			this.renderMap();
 		}
 		this.renderSide();
@@ -248,6 +339,18 @@ export class ExplorerLeafView extends ItemView {
 		});
 		const filter = bar.createEl('input', { type: 'search', attr: { placeholder: this.t('landscape.filter'), 'aria-label': this.t('landscape.filterLabel') } });
 		filter.addEventListener('input', () => this.explorer?.setFilter(filter.value));
+		const sub = bar.createEl('button', { text: this.t('explorer.submap.button') });
+		sub.addEventListener('click', (event) => {
+			const menu = new Menu();
+			for (const kind of SUBMAP_KINDS) {
+				menu.addItem((item) =>
+					item.setTitle(this.t(`explorer.submap.${kind}`)).onClick(() => {
+						void this.openSubmap(kind);
+					}),
+				);
+			}
+			menu.showAtMouseEvent(event);
+		});
 		const fit = bar.createEl('button', { cls: 'clickable-icon', attr: { 'aria-label': this.t('explorer.fit') } });
 		setIcon(fit, 'maximize');
 		fit.addEventListener('click', () => this.explorer?.fitAll());
@@ -292,7 +395,7 @@ export class ExplorerLeafView extends ItemView {
 	/** Builds the map from the analysis and the chosen variables. */
 	private renderMap(): void {
 		const explorer = this.explorer;
-		const result = this.shown;
+		const result = this.current();
 		if (!explorer) return;
 		if (!result) {
 			explorer.setData({ nodes: [], edges: [], legend: { type: 'categories', entries: [] } });
@@ -343,6 +446,10 @@ export class ExplorerLeafView extends ItemView {
 			});
 			explorer.setEdgeKinds(this.state.edges);
 			explorer.setPath(this.drift.path.map((p) => p.id));
+			if (this.fitNext) {
+				this.fitNext = false;
+				explorer.fitAll();
+			}
 			this.applyFocus();
 		});
 	}
@@ -394,7 +501,7 @@ export class ExplorerLeafView extends ItemView {
 
 	private applyFocus(): void {
 		const id = this.pendingFocus;
-		if (!id || !this.explorer || !this.shown?.notes.has(id) || !this.ids.includes(id)) return;
+		if (!id || !this.explorer || !this.current()?.notes.has(id) || !this.ids.includes(id)) return;
 		this.pendingFocus = null;
 		this.selectNote(id);
 	}
@@ -402,7 +509,7 @@ export class ExplorerLeafView extends ItemView {
 	// ---- drift ------------------------------------------------------------------------------
 
 	private startDrift(): void {
-		const result = this.shown;
+		const result = this.current();
 		if (!result || this.ids.length === 0) return;
 		const start = this.selected && result.notes.has(this.selected) ? this.selected : this.ids[Math.floor(Math.random() * this.ids.length)]!;
 		this.drift.path = [{ id: start, similarity: 1 }];
@@ -422,7 +529,7 @@ export class ExplorerLeafView extends ItemView {
 
 	private stepDrift(): void {
 		this.drift.timer = null;
-		const result = this.shown;
+		const result = this.current();
 		if (!result) return;
 		const index = new Map(this.ids.map((id, i) => [id, i]));
 		const visited = new Set(this.drift.path.map((p) => index.get(p.id)!));
@@ -463,7 +570,7 @@ export class ExplorerLeafView extends ItemView {
 		if (!side) return;
 		const scroll = side.scrollTop;
 		side.empty();
-		const result = this.shown;
+		const result = this.current();
 		if (!result) return;
 		const tabs = side.createDiv({ cls: 'semantic-atlas-tabs', attr: { role: 'tablist' } });
 		for (const p of PANELS) {

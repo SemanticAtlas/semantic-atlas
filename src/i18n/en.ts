@@ -265,6 +265,20 @@ export const en = {
 	"suggest.linked": "Link to {to} added at the end of {from}.",
 	"suggest.unrelated": "Not related",
 	"suggest.ignore": "Ignore",
+	"explorer.submap.button": "Sub-map",
+	"explorer.submap.cluster": "Cluster of the selected note",
+	"explorer.submap.folder": "Folder of the selected note",
+	"explorer.submap.tag": "Main tag of the selected note",
+	"explorer.submap.shown": "Notes shown",
+	"explorer.submap.path": "Drift path",
+	"explorer.submap.vault": "Vault",
+	"explorer.submap.crumbs": "Levels of the map",
+	"explorer.submap.shownLabel": "Notes shown",
+	"explorer.submap.pathLabel": "Drift",
+	"explorer.submap.noSelection": "Select a note first.",
+	"explorer.submap.tooFew": "A sub-map needs at least {min} notes ({count} here).",
+	"explorer.submap.tooMany": "A sub-map holds at most {max} notes ({count} here).",
+	"explorer.submap.computing": "Mapping {count} notes…",
 } as const;
 
 export type MessageKey = keyof typeof en;
