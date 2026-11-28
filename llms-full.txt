@@ -93,7 +93,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - index settings (version 2, migrated): title weight, passage length, excluded folders and tags, code blocks, mobile;
   - status bar progress;
   - tested in Obsidian 1.15.1 with 516 notes.
-- Explorer view (commands "Open the explorer" and "Open in the explorer, centred on this note", see `docs/EXPLORER.md`): notes placed by meaning, colour by cluster, folder, main tag, role, bridge, isolation, precursor, recent activity, date, relevance or page rank (missing values in grey), size by links, page rank, centrality or recent activity, links by kind, interactive legend, card of the selected note, drift through the closest notes (0.1 to 10 s per step, path copied as links), sub-maps of a cluster, folder, main tag, the notes shown or a drift path (20 to 2,000 notes, own clusters and suggestions, trail of levels). Suggested links with their reasons (similarity, shared words, common neighbours, shared tags, closest passages) and three actions (link, not related, ignore), remembered in the settings; the score is checked on the vault's own links and combined with shared neighbours and tags only when that wins. Uses @semanticatlas/core 0.6.0.
+- Explorer view (commands "Open the explorer" and "Open in the explorer, centred on this note", see `docs/EXPLORER.md`): notes placed by meaning with t-SNE (default), UMAP or PaCMAP, warm-started and aligned on the previous map, with the measured quality of the map (trustworthiness, continuity, neighbours kept) and a reading warning, colour by cluster, folder, main tag, role, bridge, isolation, precursor, recent activity, date, relevance or page rank (missing values in grey), size by links, page rank, centrality or recent activity, links by kind, interactive legend, card of the selected note, drift through the closest notes (0.1 to 10 s per step, path copied as links), sub-maps of a cluster, folder, main tag, the notes shown or a drift path (20 to 2,000 notes, own clusters and suggestions, trail of levels). Suggested links with their reasons (similarity, shared words, common neighbours, shared tags, closest passages) and three actions (link, not related, ignore), remembered in the settings; the score is checked on the vault's own links and combined with shared neighbours and tags only when that wins. Uses @semanticatlas/core 0.7.0 and @semanticatlas/engine 0.4.0.
 - Landscape view (command "Open the landscape", see `docs/LANDSCAPE.md`): map of the notes by cluster, cluster cards with renaming (a name given by hand follows the most central notes of its cluster, so it is kept across devices and after clearing the data), notes per cluster over time (year, quarter or month, by modification, creation or a date property), interest axes against clusters, and a "Quality of the analysis" panel (modularity, silhouette, stability, hubness, near duplicates, most isolated notes, with indicative thresholds). The analysis (Leiden clusters by consensus, names, roles, centralities, layout) runs in a background worker after indexing and keeps identifiers, names and positions from one run to the next; command "Update the analysis". Settings version 3 (migrated): cluster size, date source and property, interest axes, names given by hand. Tested in Obsidian 1.15.1 with 516 notes (analysis in under a second).
 - Link graph view (commands "Open link graph" and "Open local link graph"): explicit links, embeds and front-matter links from the metadata cache. It is laid out by the Semantic Atlas engine (WebAssembly, embedded) and offers a local graph by depth, optional ghost notes for links to notes not created yet, an accessible table of links, keyboard navigation and theme colours. The view state is saved. See `docs/LINK-GRAPH.md`. Tested in Obsidian 1.15.1 (desktop, light and dark themes, plugin reload).
 
@@ -172,6 +172,15 @@ The explorer shows every analysed note on a map, placed by meaning, with the var
 
 Run **Open the explorer**, or **Open in the explorer, centred on this note** from a note.
 
+## Layouts
+
+- **t-SNE** (default), **UMAP** and **PaCMAP**: projections of the notes' vectors, computed on your device in a background worker (about 1 to 3 seconds for 500 notes). Each one is computed once per analysis and level; after a new analysis, it starts from the previous map and is aligned on it, so that the map changes little when a few notes change. Above 5,000 notes, a sample is projected and the other notes are placed among their neighbours.
+- **Landscape (forces)**: the layout of the landscape view.
+
+Changing the layout moves the notes smoothly (instantly with reduced motion). Under the toolbar, the **quality of the map** is measured: trustworthiness and continuity (1 is best) and the share of each note's 10 closest notes that stay among its 10 closest on the map. See [METRICS.md](METRICS.md).
+
+> **Reading the map**: close notes are close in meaning. On a t-SNE or UMAP map, the distance between far groups and the size of groups mean little; PaCMAP keeps the layout of far groups only roughly.
+
 ## Map
 
 - **Colour by**: cluster, folder, main tag (the note's tag used by the most notes), role (core of its cluster, connector, peripheral), bridge (participation coefficient), isolation, precursor, recent activity, date, relevance to the interest axes (when axes are declared), page rank. Numbers use a colour-blind-safe scale by rank; notes without a value are grey and counted in the legend ("no value"), never shown as zero.
@@ -206,9 +215,9 @@ Your decisions are saved in the plugin's settings (they follow renamed notes) an
 
 **Sub-map** maps a part of the vault on its own, with its own clusters, names, layout and suggested links: the cluster, folder or main tag of the selected note, the notes shown (after a filter or a legend selection), or the drift path. A sub-map holds 20 to 2,000 notes, and can be split again. The trail above the map goes back to any level. Sub-maps are computed on demand and not saved; names given by hand apply to the whole vault's clusters only.
 
-## Coming next
+## Not yet
 
-Projections (t-SNE, UMAP, PaCMAP) with their measured quality. Today the map uses the landscape's layout.
+Bringing small isolated groups closer and spreading overlapping notes (post-processing of the projections), the free physics layout and 3D come in later phases.
 
 
 <!-- docs/LANDSCAPE.md -->

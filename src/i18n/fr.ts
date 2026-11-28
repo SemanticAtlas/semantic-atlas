@@ -282,4 +282,13 @@ export const fr: Record<MessageKey, string> = {
 	"explorer.submap.tooFew": "Une sous-carte demande au moins {min} notes ({count} ici).",
 	"explorer.submap.tooMany": "Une sous-carte compte au plus {max} notes ({count} ici).",
 	"explorer.submap.computing": "Cartographie de {count} notes…",
+	"explorer.layout": "Disposition",
+	"explorer.layout.tsne": "t-SNE",
+	"explorer.layout.umap": "UMAP",
+	"explorer.layout.pacmap": "PaCMAP",
+	"explorer.layout.landscape": "Paysage (forces)",
+	"explorer.projecting": "Calcul de la carte {method}…",
+	"explorer.quality": "Carte {method} : fiabilité {trust}, continuité {continuity}, {kept} % des 10 notes les plus proches conservées.",
+	"explorer.reading": "Des notes proches ont des sens proches ; la distance entre groupes éloignés et la taille des groupes veulent peu dire.",
+	"explorer.readingPacmap": "Des notes proches ont des sens proches ; la disposition des groupes éloignés n'est gardée qu'à peu près.",
 };

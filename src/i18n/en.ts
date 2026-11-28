@@ -279,6 +279,15 @@ export const en = {
 	"explorer.submap.tooFew": "A sub-map needs at least {min} notes ({count} here).",
 	"explorer.submap.tooMany": "A sub-map holds at most {max} notes ({count} here).",
 	"explorer.submap.computing": "Mapping {count} notes…",
+	"explorer.layout": "Layout",
+	"explorer.layout.tsne": "t-SNE",
+	"explorer.layout.umap": "UMAP",
+	"explorer.layout.pacmap": "PaCMAP",
+	"explorer.layout.landscape": "Landscape (forces)",
+	"explorer.projecting": "Computing the {method} map…",
+	"explorer.quality": "{method} map: trustworthiness {trust}, continuity {continuity}, {kept} % of the 10 closest notes kept.",
+	"explorer.reading": "Close notes are close in meaning; the distance between far groups and the size of groups mean little.",
+	"explorer.readingPacmap": "Close notes are close in meaning; the layout of far groups is only roughly kept.",
 } as const;
 
 export type MessageKey = keyof typeof en;

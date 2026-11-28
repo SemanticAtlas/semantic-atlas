@@ -18,6 +18,8 @@ import {
 	type ExplorerEdge,
 	type ExplorerEdgeKind,
 	type ExplorerLegend,
+	type ProjectionMethod,
+	type ProjectionResult,
 	type Suggestion,
 } from '@semanticatlas/core';
 import type SemanticAtlasPlugin from '../main';
@@ -34,7 +36,11 @@ const PANELS = ['note', 'suggestions'] as const;
 type Panel = (typeof PANELS)[number];
 const SUGGESTIONS_SHOWN = 40;
 
+type Layout = 'landscape' | ProjectionMethod;
+const LAYOUTS: readonly Layout[] = ['tsne', 'umap', 'pacmap', 'landscape'];
+
 interface ExplorerState extends Record<string, unknown> {
+	layout: Layout;
 	colourBy: ColourBy;
 	sizeBy: SizeBy;
 	edges: ExplorerEdgeKind[];
@@ -45,7 +51,7 @@ interface ExplorerState extends Record<string, unknown> {
 	aroundSelection: boolean;
 }
 
-const DEFAULT_STATE: ExplorerState = { colourBy: 'cluster', sizeBy: 'pagerank', edges: ['link', 'embed', 'property'], delay: 1.5, panel: 'note', aroundSelection: false };
+const DEFAULT_STATE: ExplorerState = { layout: 'tsne', colourBy: 'cluster', sizeBy: 'pagerank', edges: ['link', 'embed', 'property'], delay: 1.5, panel: 'note', aroundSelection: false };
 const COLOUR_BY: readonly ColourBy[] = [...CATEGORY_BY, ...NUMBER_BY];
 
 export class ExplorerLeafView extends ItemView {
@@ -64,6 +70,9 @@ export class ExplorerLeafView extends ItemView {
 	private pendingFocus: string | null = null;
 	private drift: { timer: number | null; path: { id: string; similarity: number }[] } = { timer: null, path: [] };
 	private ticket = 0;
+	/** Projections computed, by level and method, with the ids they were computed for. */
+	private projections = new Map<string, { ids: string[]; result: AnalysisResult; projection: ProjectionResult }>();
+	private quality: HTMLElement | null = null;
 	/** Fit the camera after the next map update (a new level). */
 	private fitNext = false;
 
@@ -93,6 +102,7 @@ export class ExplorerLeafView extends ItemView {
 	override async setState(state: unknown, result: ViewStateResult): Promise<void> {
 		if (typeof state === 'object' && state !== null) {
 			const s = state as Partial<ExplorerState> & { focus?: unknown };
+			if (LAYOUTS.includes(s.layout as Layout)) this.state.layout = s.layout as Layout;
 			if (COLOUR_BY.includes(s.colourBy as ColourBy)) this.state.colourBy = s.colourBy as ColourBy;
 			if (SIZE_BY.includes(s.sizeBy as SizeBy)) this.state.sizeBy = s.sizeBy as SizeBy;
 			if (Array.isArray(s.edges)) this.state.edges = s.edges.filter((e): e is ExplorerEdgeKind => EDGE_KINDS.includes(e));
@@ -117,6 +127,7 @@ export class ExplorerLeafView extends ItemView {
 		contentEl.addClass('semantic-atlas-explorer');
 		this.toolbar = contentEl.createDiv({ cls: 'semantic-atlas-toolbar' });
 		this.message = contentEl.createEl('p', { cls: 'semantic-atlas-message', attr: { 'aria-live': 'polite' } });
+		this.quality = contentEl.createEl('p', { cls: 'semantic-atlas-message semantic-atlas-map-quality' });
 		this.crumbs = contentEl.createEl('nav', { cls: 'semantic-atlas-crumbs', attr: { 'aria-label': this.plugin.t('explorer.submap.crumbs') } });
 		this.crumbs.hide();
 		const main = contentEl.createDiv({ cls: 'semantic-atlas-explorer-main' });
@@ -320,6 +331,11 @@ export class ExplorerLeafView extends ItemView {
 				onChange(s.value as T);
 			});
 		};
+		select(this.t('explorer.layout'), this.state.layout, LAYOUTS, (o) => this.t(`explorer.layout.${o}`), (v) => {
+			this.state.layout = v;
+			this.save();
+			void this.changeLayout();
+		});
 		const hasAxes = this.plugin.settings.analysis.axes.length > 0;
 		select(
 			this.t('explorer.colourBy'),
@@ -405,7 +421,7 @@ export class ExplorerLeafView extends ItemView {
 		const ids = [...result.notes.keys()];
 		this.ids = ids;
 		const ctx = this.context(result);
-		void this.relevance().then((relevance) => {
+		void Promise.all([this.relevance(), this.positions(result, ids)]).then(([relevance, pos]) => {
 			if (ticket !== this.ticket) return;
 			const full: VariableContext = relevance ? { ...ctx, relevance } : ctx;
 			const { colours, legend } = this.encode(ids, full);
@@ -435,7 +451,7 @@ export class ExplorerLeafView extends ItemView {
 			explorer.setData({
 				nodes: ids.map((id, i) => {
 					const n = result.notes.get(id)!;
-					return { id, label: this.label(id), x: n.x, y: n.y, colour: colours[i]!, size: size[i]! };
+					return { id, label: this.label(id), x: pos ? pos.x[i]! : n.x, y: pos ? pos.y[i]! : n.y, colour: colours[i]!, size: size[i]! };
 				}),
 				edges,
 				legend,
@@ -452,6 +468,78 @@ export class ExplorerLeafView extends ItemView {
 			}
 			this.applyFocus();
 		});
+	}
+
+	/** Key of the current level, for the projections cache. */
+	private levelKey(method: ProjectionMethod): string {
+		return `${this.levels.map((l) => l.label).join('\u0000')}|${method}`;
+	}
+
+	/**
+	 * Positions of the notes for the chosen layout: the landscape's, or a projection computed
+	 * once per level and analysis, warm-started from the previous one of the same level.
+	 */
+	private async positions(result: AnalysisResult, ids: string[]): Promise<{ x: Float32Array; y: Float32Array } | null> {
+		const layout = this.state.layout;
+		if (layout === 'landscape') {
+			this.showQuality(null);
+			return null;
+		}
+		const key = this.levelKey(layout);
+		const cached = this.projections.get(key);
+		if (cached?.result === result && cached.ids.length === ids.length && cached.ids.every((id, i) => id === ids[i])) {
+			this.showQuality(cached.projection);
+			return cached.projection;
+		}
+		const previous = cached ? new Map(cached.ids.map((id, i) => [id, [cached.projection.x[i]!, cached.projection.y[i]!] as [number, number]])) : undefined;
+		this.showQuality(null, true);
+		try {
+			const projection = await this.plugin.analysis.project(ids, layout, previous);
+			if (projection.skipped) {
+				this.showQuality(null);
+				return null;
+			}
+			this.projections.set(key, { ids, result, projection });
+			this.showQuality(projection);
+			return projection;
+		} catch (error) {
+			this.plugin.log.error(`projection: ${error instanceof Error ? error.message : String(error)}`);
+			this.showQuality(null);
+			return null;
+		}
+	}
+
+	/** Moves the notes to the chosen layout, animated. */
+	private async changeLayout(): Promise<void> {
+		const result = this.current();
+		if (!result || !this.explorer) return;
+		const ids = this.ids;
+		const pos = await this.positions(result, ids);
+		if (this.current() !== result || this.ids !== ids) return;
+		const x = pos ? pos.x : Float32Array.from(ids, (id) => result.notes.get(id)!.x);
+		const y = pos ? pos.y : Float32Array.from(ids, (id) => result.notes.get(id)!.y);
+		this.explorer.setPositions(x, y);
+		this.explorer.fitAll();
+	}
+
+	private showQuality(p: ProjectionResult | null, computing = false): void {
+		const el = this.quality;
+		if (!el) return;
+		el.empty();
+		if (computing) el.setText(this.t('explorer.projecting', { method: this.t(`explorer.layout.${this.state.layout}`) }));
+		else if (p) {
+			const fmt = (x: number): string => x.toFixed(2);
+			el.setText(
+				this.t('explorer.quality', {
+					method: this.t(`explorer.layout.${p.method}`),
+					trust: fmt(p.quality.trustworthiness),
+					continuity: fmt(p.quality.continuity),
+					kept: Math.round(p.quality.knnPreservation * 100),
+				}),
+			);
+			el.createSpan({ text: ` ${this.t(p.method === 'pacmap' ? 'explorer.readingPacmap' : 'explorer.reading')}` });
+		}
+		el.toggle(el.textContent !== '');
 	}
 
 	private context(result: AnalysisResult): VariableContext {

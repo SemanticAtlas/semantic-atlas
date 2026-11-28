@@ -4,6 +4,15 @@ The explorer shows every analysed note on a map, placed by meaning, with the var
 
 Run **Open the explorer**, or **Open in the explorer, centred on this note** from a note.
 
+## Layouts
+
+- **t-SNE** (default), **UMAP** and **PaCMAP**: projections of the notes' vectors, computed on your device in a background worker (about 1 to 3 seconds for 500 notes). Each one is computed once per analysis and level; after a new analysis, it starts from the previous map and is aligned on it, so that the map changes little when a few notes change. Above 5,000 notes, a sample is projected and the other notes are placed among their neighbours.
+- **Landscape (forces)**: the layout of the landscape view.
+
+Changing the layout moves the notes smoothly (instantly with reduced motion). Under the toolbar, the **quality of the map** is measured: trustworthiness and continuity (1 is best) and the share of each note's 10 closest notes that stay among its 10 closest on the map. See [METRICS.md](METRICS.md).
+
+> **Reading the map**: close notes are close in meaning. On a t-SNE or UMAP map, the distance between far groups and the size of groups mean little; PaCMAP keeps the layout of far groups only roughly.
+
 ## Map
 
 - **Colour by**: cluster, folder, main tag (the note's tag used by the most notes), role (core of its cluster, connector, peripheral), bridge (participation coefficient), isolation, precursor, recent activity, date, relevance to the interest axes (when axes are declared), page rank. Numbers use a colour-blind-safe scale by rank; notes without a value are grey and counted in the legend ("no value"), never shown as zero.
@@ -38,6 +47,6 @@ Your decisions are saved in the plugin's settings (they follow renamed notes) an
 
 **Sub-map** maps a part of the vault on its own, with its own clusters, names, layout and suggested links: the cluster, folder or main tag of the selected note, the notes shown (after a filter or a legend selection), or the drift path. A sub-map holds 20 to 2,000 notes, and can be split again. The trail above the map goes back to any level. Sub-maps are computed on demand and not saved; names given by hand apply to the whole vault's clusters only.
 
-## Coming next
+## Not yet
 
-Projections (t-SNE, UMAP, PaCMAP) with their measured quality. Today the map uses the landscape's layout.
+Bringing small isolated groups closer and spreading overlapping notes (post-processing of the projections), the free physics layout and 3D come in later phases.

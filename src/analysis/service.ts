@@ -5,7 +5,7 @@
  */
 import { TFile, getAllTags, type App } from 'obsidian';
 import { pairKey, scoreAxes, tokenize } from '@semanticatlas/core';
-import { AnalysisClient, type AnalysisResult, type Axis } from '@semanticatlas/core';
+import { AnalysisClient, type AnalysisResult, type Axis, type ProjectionMethod, type ProjectionResult } from '@semanticatlas/core';
 import engineWasm from '@semanticatlas/engine/engine.wasm';
 import analysisWorkerCode from 'virtual:analysis-worker';
 import type { IndexingService } from '../indexing/service';
@@ -153,6 +153,36 @@ export class AnalysisService {
 		await client.init(engineWasm.slice());
 		this.client = client;
 		return client;
+	}
+
+	/**
+	 * A t-SNE, UMAP or PaCMAP map of the given notes (in that order), started from `previous`
+	 * positions when they cover most of them.
+	 */
+	async project(ids: readonly string[], method: ProjectionMethod, previous?: ReadonlyMap<string, readonly [number, number]>): Promise<ProjectionResult> {
+		const all = this.deps.index.noteVectors();
+		const row = new Map(all.ids.map((id, i) => [id, i]));
+		const kept = ids.filter((id) => row.has(id));
+		const vectors = new Float32Array(kept.length * all.dims);
+		kept.forEach((id, r) => {
+			const i = row.get(id)!;
+			vectors.set(all.vectors.subarray(i * all.dims, (i + 1) * all.dims), r * all.dims);
+		});
+		const client = await this.engineClient();
+		const { projection } = await client.project({ ids: kept, vectors, dims: all.dims }, previous ? { method, seed: 1, previous } : { method, seed: 1 });
+		if (kept.length === ids.length) return projection;
+		// Notes no longer indexed: placed at the centre (rare: the index changed meanwhile).
+		const at = new Map(kept.map((id, r) => [id, r]));
+		const x = new Float32Array(ids.length);
+		const y = new Float32Array(ids.length);
+		ids.forEach((id, i) => {
+			const r = at.get(id);
+			if (r !== undefined) {
+				x[i] = projection.x[r]!;
+				y[i] = projection.y[r]!;
+			}
+		});
+		return { ...projection, x, y };
 	}
 
 	/**
