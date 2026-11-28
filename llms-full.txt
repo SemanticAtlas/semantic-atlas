@@ -13,7 +13,7 @@ Map your Obsidian vault by meaning, not only by links:
 
 Everything is computed on your device. By default, no data leaves it.
 
-> **Status: early development.** This version contains only the project skeleton (settings and debug mode). None of the features above is available yet. See [the specification](docs/SPEC.md) and the [changelog](CHANGELOG.md).
+> **Status: early development.** Available today: the [link graph](docs/LINK-GRAPH.md) (global or local, with notes not created yet as an option). The features based on meaning (semantic index, related notes, search, themes, missing links) are not available yet. See [the specification](docs/SPEC.md) and the [changelog](CHANGELOG.md).
 
 ## Installation
 
@@ -24,9 +24,13 @@ Not yet published in the community directory. To try a development build, copy `
 | Capability | Current version | Planned |
 |---|---|---|
 | Network | None. | Download of the embedding model from Hugging Face, **only after you click and confirm**; the address, size and license are shown first, the version is fixed and its SHA-256 checked. Optional external providers (OpenAI-compatible endpoint, Ollama), off by default. The model can also be imported from a file, with no network at all. |
-| File system | Reads and writes only the plugin settings (`data.json`). | Reads notes through the Obsidian API; changes a note only after an explicit action of yours; optional index snapshot in a visible folder of the vault; index cache in IndexedDB on the device. Nothing outside the vault. |
+| File system | Reads notes' links from Obsidian's metadata cache. Writes only the plugin settings (`data.json`). Creates a note only when you open a note that does not exist yet from the link graph, as clicking an unresolved link does. | Reads notes through the Obsidian API; changes a note only after an explicit action of yours; optional index snapshot in a visible folder of the vault; index cache in IndexedDB on the device. Nothing outside the vault. |
 | Clipboard | None. | Writes only when you choose "copy" (list of links, context for an assistant). Never reads it. |
-| Other capabilities | None. | Web Workers and WebAssembly bundled in `main.js`; WebGL for maps. |
+| Other capabilities | WebAssembly (the Semantic Atlas engine, embedded in `main.js`) and a canvas for the link graph. | Web Workers and WebAssembly bundled in `main.js`; WebGL for maps. |
+
+## Credits
+
+The link graph uses [@semanticatlas/core](https://github.com/SemanticAtlas/semantic-atlas-core) and [@semanticatlas/engine](https://github.com/SemanticAtlas/semantic-atlas-engine) (MIT, same author), bundled in `main.js`.
 
 ## Privacy
 
@@ -67,6 +71,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Versioned settings with migrations; settings saved by a newer release are used but never overwritten; reload on external change (sync).
 - Debug mode setting: the console stays silent except for errors unless it is enabled.
 - English and French interface, chosen from Obsidian's language.
+- Link graph view (commands "Open link graph" and "Open local link graph"): explicit links, embeds and front-matter links from the metadata cache. It is laid out by the Semantic Atlas engine (WebAssembly, embedded) and offers a local graph by depth, optional ghost notes for links to notes not created yet, an accessible table of links, keyboard navigation and theme colours. The view state is saved. See `docs/LINK-GRAPH.md`.
 
 
 <!-- docs/ARCHITECTURE.md -->
@@ -94,6 +99,11 @@ This page describes the code as it is. The target architecture is in [SPEC.md, s
 | `src/settings/tab.ts` | Settings tab | yes |
 | `src/i18n/` | English and French strings, locale choice | no |
 | `src/log.ts` | Console output, silent unless debug mode is on | no |
+| `src/adapter/collect.ts` | Notes and references to the neutral graph data (edges counted by target, kind and syntax) | no |
+| `src/adapter/vault.ts` | Reads links, embeds and front-matter links from `metadataCache`; link resolver | yes |
+| `src/views/relations.ts` | Link graph view (`ItemView`), state saved with `getState`/`setState` | yes |
+
+The link graph uses `RelationsView` from `@semanticatlas/core`. The engine's WebAssembly module is embedded in `main.js` (esbuild `binary` loader) and loaded on first use, not at start-up. Both packages are git dependencies pinned to their distribution tags.
 
 ## Settings format (`data.json`)
 
@@ -109,6 +119,70 @@ This page describes the code as it is. The target architecture is in [SPEC.md, s
 ## Build
 
 `npm run build` type-checks, then bundles `src/main.ts` into a single `main.js` (CommonJS, ES2021, minified, licenses kept at the end). The build is reproducible: CI builds twice and compares the SHA-256, because the community directory rebuilds the plugin and compares it with the release.
+
+
+<!-- docs/LINK-GRAPH.md -->
+
+# Link graph
+
+The link graph shows the explicit links between your notes, laid out by a force simulation: linked notes pull together, and every note pushes the others away.
+
+## Open it
+
+| Command | Opens |
+|---|---|
+| **Open link graph** | The whole vault, in a new tab |
+| **Open local link graph** | The notes around the active note, in the right sidebar. It follows the note you open. |
+
+No shortcut is assigned by default. You can set one in **Settings → Hotkeys**.
+
+## Controls
+
+- **Local graph**: shows only the notes within **Depth** links (1 to 3) of the active note, following links in both directions.
+- **Show notes not created yet**: draws the targets of links to notes that do not exist yet as hollow "ghost" notes.
+- The view remembers these choices, even after a restart.
+
+## Reading the graph
+
+| Element | Meaning |
+|---|---|
+| Solid line | Link (`[[note]]` or `[text](note.md)`) |
+| Dashed line | Embed (`![[note]]`) |
+| Dotted line | Link in a property (front matter) |
+| Dash-dotted line, hollow node | Link to a note that does not exist yet |
+| Arrowhead | Direction of the link |
+| Larger node | More links |
+| Ring | Selected note, or the note the local graph is centred on |
+
+The status line under the graph counts the notes, the links and the unresolved links. Under it, a table lists every note with the notes it links to and the notes that link to it. It gives the same information as the drawing, for keyboard and screen-reader users.
+
+## Interaction
+
+| Action | Mouse or touch | Keyboard (graph focused) |
+|---|---|---|
+| Select a note and highlight its neighbours | Click | `n` / `p`: next / previous note |
+| Open a note | Double-click | Enter, or a button in the table |
+| Move a note | Drag it (hold Shift to keep it in place) | — |
+| Pan | Drag the background | Arrow keys |
+| Zoom | Wheel | `+` / `-`; `0` shows everything |
+| Clear the selection | — | Escape |
+
+From a tab, notes open in a new tab; from the sidebar, they open in the main area. Opening a ghost note creates it, as clicking an unresolved link does: only that explicit action changes your vault.
+
+## Details
+
+- **Source of the links**: Obsidian's metadata cache (links, embeds and front-matter links). The plugin does not parse your Markdown itself. Two links from one note to another with the same kind and syntax count as one edge, with their number of occurrences.
+- **Attachments**: links to images, PDF files and other attachments are left out for now. The graph shows notes only.
+- **Updates**: the graph is rebuilt a second after Obsidian has finished resolving the links of a change.
+- **Theme**: colours come from the theme, through the `--graph-node`, `--graph-line`, `--graph-text` and `--interactive-accent` variables, and are re-read when the theme changes.
+- **Reduced motion**: with your system's reduced-motion setting, the layout is computed out of sight and only the final state is drawn. Otherwise the animation stops as soon as the layout is stable, and nothing runs at rest.
+- **Engine**: the layout is computed by the Semantic Atlas engine (Rust compiled to WebAssembly), embedded in the plugin. Nothing is downloaded.
+
+## Limits of this version
+
+- The drawing is Canvas 2D and the simulation runs in the interface thread. That suits a few thousand notes; larger vaults will get WebGL and a worker.
+- Notes are not coloured by theme yet: clustering by meaning comes with the semantic index.
+- There is no long-press pinning on touch screens.
 
 
 <!-- docs/METRICS.md -->

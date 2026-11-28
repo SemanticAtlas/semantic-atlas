@@ -30,4 +30,15 @@ describe('createTranslator', () => {
 		expect(createTranslator('fr')('settings.debug.name')).toBe(fr['settings.debug.name']);
 		expect(createTranslator('en')('settings.debug.name')).toBe(en['settings.debug.name']);
 	});
+
+	it('replaces placeholders and leaves unknown ones as they are', () => {
+		const t = createTranslator('en');
+		expect(t('relations.summary', { notes: 4, links: 2, unresolved: 1 })).toBe('Notes: 4, links: 2, unresolved links: 1');
+		expect(t('relations.selected', {})).toBe('Selected: {label}');
+	});
+
+	it('keeps the same placeholders in every language', () => {
+		const names = (s: string) => [...s.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort();
+		for (const key of Object.keys(en) as (keyof typeof en)[]) expect(names(fr[key])).toEqual(names(en[key]));
+	});
 });

@@ -45,5 +45,9 @@
 		"typescript": "6.0.3",
 		"typescript-eslint": "8.74.0",
 		"vitest": "5.1.2"
+	},
+	"dependencies": {
+		"@semanticatlas/core": "github:SemanticAtlas/semantic-atlas-core#core-dist-v0.2.0",
+		"@semanticatlas/engine": "github:SemanticAtlas/semantic-atlas-engine#engine-dist-v0.1.0"
 	}
 }

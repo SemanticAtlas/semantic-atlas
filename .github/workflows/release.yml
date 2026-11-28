@@ -18,6 +18,8 @@ jobs:
               with:
                   node-version: 24
                   cache: 'npm'
+            # Core and engine are git dependencies recorded as git+ssh in the lockfile; CI has no SSH key.
+            - run: git config --global url."https://github.com/".insteadOf ssh://git@github.com/
             - run: npm ci
             - run: npm run lint
             - run: npm test

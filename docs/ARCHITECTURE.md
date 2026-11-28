@@ -21,6 +21,11 @@ This page describes the code as it is. The target architecture is in [SPEC.md, s
 | `src/settings/tab.ts` | Settings tab | yes |
 | `src/i18n/` | English and French strings, locale choice | no |
 | `src/log.ts` | Console output, silent unless debug mode is on | no |
+| `src/adapter/collect.ts` | Notes and references to the neutral graph data (edges counted by target, kind and syntax) | no |
+| `src/adapter/vault.ts` | Reads links, embeds and front-matter links from `metadataCache`; link resolver | yes |
+| `src/views/relations.ts` | Link graph view (`ItemView`), state saved with `getState`/`setState` | yes |
+
+The link graph uses `RelationsView` from `@semanticatlas/core`. The engine's WebAssembly module is embedded in `main.js` (esbuild `binary` loader) and loaded on first use, not at start-up. Both packages are git dependencies pinned to their distribution tags.
 
 ## Settings format (`data.json`)
 

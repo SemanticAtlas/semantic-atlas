@@ -1,8 +1,132 @@
-/* Semantic Atlas: every class is prefixed with semantic-atlas- and uses Obsidian's CSS variables. */
+/* Semantic Atlas: every class is prefixed and uses Obsidian's CSS variables, so the plugin follows the theme. */
 
 .semantic-atlas-warning {
 	color: var(--text-warning);
 	background-color: var(--background-modifier-message);
 	border-radius: var(--radius-s);
 	padding: var(--size-4-2) var(--size-4-3);
+}
+
+/* Link graph view. The --sa-* variables are read by the drawing code (canvas). */
+.semantic-atlas-relations {
+	--sa-node: var(--graph-node, var(--text-muted));
+	--sa-accent: var(--interactive-accent);
+	--sa-edge: var(--graph-line, var(--background-modifier-border));
+	--sa-text: var(--graph-text, var(--text-normal));
+	--sa-background: var(--background-primary);
+	--sa-font: var(--font-ui-smaller) var(--font-interface);
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-2);
+	height: 100%;
+}
+
+.semantic-atlas-toolbar {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--size-4-3);
+	align-items: center;
+	font-size: var(--font-ui-small);
+}
+
+.semantic-atlas-toolbar label {
+	display: inline-flex;
+	gap: var(--size-4-1);
+	align-items: center;
+	min-height: 32px;
+}
+
+.semantic-atlas-message:empty {
+	display: none;
+}
+
+.semantic-atlas-message {
+	margin: 0;
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+}
+
+.semantic-atlas-relations-host {
+	flex: 1 1 auto;
+	min-height: 0;
+}
+
+/* Classes created by @semanticatlas/core's RelationsView. */
+.semantic-atlas-relations .sa-relations {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-2);
+	height: 100%;
+	min-height: 0;
+}
+
+.semantic-atlas-relations .sa-relations-canvas {
+	display: block;
+	flex: 1 1 auto;
+	width: 100%;
+	min-height: 240px;
+	touch-action: none;
+	border-radius: var(--radius-s);
+	background: var(--sa-background);
+}
+
+.semantic-atlas-relations .sa-relations-canvas-pointer {
+	cursor: pointer;
+}
+
+.semantic-atlas-relations .sa-relations-canvas:focus-visible {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: 2px;
+}
+
+.semantic-atlas-relations .sa-relations-status {
+	margin: 0;
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
+.semantic-atlas-relations .sa-relations-list {
+	overflow: auto;
+	max-height: 35%;
+	font-size: var(--font-ui-small);
+}
+
+.semantic-atlas-relations .sa-relations-list table {
+	border-collapse: collapse;
+	width: 100%;
+}
+
+.semantic-atlas-relations .sa-relations-list caption {
+	text-align: start;
+	font-weight: var(--font-semibold);
+	padding: var(--size-4-1) 0;
+}
+
+.semantic-atlas-relations .sa-relations-list th,
+.semantic-atlas-relations .sa-relations-list td {
+	text-align: start;
+	vertical-align: top;
+	padding: var(--size-2-1) var(--size-4-1);
+}
+
+.semantic-atlas-relations .sa-relations-list button {
+	font: inherit;
+	color: var(--link-color);
+	background: none;
+	border: none;
+	box-shadow: none;
+	padding: var(--size-2-1);
+	min-height: 24px;
+	height: auto;
+	cursor: pointer;
+	text-decoration: underline;
+}
+
+.semantic-atlas-relations .sa-relations-list button.sa-relations-ghost {
+	color: var(--link-unresolved-color);
+	font-style: italic;
+}
+
+.semantic-atlas-relations .sa-relations-list button:focus-visible {
+	outline: 2px solid var(--interactive-accent);
 }

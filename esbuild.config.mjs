@@ -36,6 +36,8 @@ const context = await esbuild.context({
 	logLevel: 'info',
 	sourcemap: prod ? false : 'inline',
 	treeShaking: true,
+	// The compute engine (WebAssembly) is embedded in main.js: nothing is downloaded.
+	loader: { '.wasm': 'binary' },
 	legalComments: prod ? 'eof' : 'inline',
 	outfile: 'main.js',
 	minify: prod,
