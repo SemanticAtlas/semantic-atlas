@@ -24,16 +24,22 @@ This page describes the code as it is. The target architecture is in [SPEC.md, s
 | `src/adapter/collect.ts` | Notes and references to the neutral graph data (edges counted by target, kind and syntax) | no |
 | `src/adapter/vault.ts` | Reads links, embeds and front-matter links from `metadataCache`; link resolver | yes |
 | `src/views/relations.ts` | Link graph view (`ItemView`), state saved with `getState`/`setState` | yes |
+| `src/adapter/note-input.ts` | Note content + metadata cache to the core's `NoteInput` (offsets without front matter, sections, link spans, dates) | no |
+| `src/indexing/plan.ts` | Exclusions, order of work, settings hash | no |
+| `src/indexing/service.ts` | Semantic index: model download (requestUrl with Range), embedding worker, incremental indexing, search, related notes | yes |
+| `src/views/related.ts`, `search-modal.ts`, `model-modal.ts` | Related notes view, search, model and clear-data dialogs | yes |
+
+The embedding worker (`@semanticatlas/core/embed-worker`) is bundled on its own by esbuild, inlined in `main.js` as text and started from a blob URL. The engine's `embed.wasm` is embedded (esbuild `binary` loader) and handed to the worker. The model files come from IndexedDB.
 
 The link graph uses `RelationsView` from `@semanticatlas/core`. The engine's WebAssembly module is embedded in `main.js` (esbuild `binary` loader) and loaded on first use, not at start-up. Both packages are git dependencies pinned to their distribution tags.
 
 ## Settings format (`data.json`)
 
 ```json
-{ "version": 1, "debug": false }
+{ "version": 2, "debug": false, "index": { "enabled": false, "onMobile": false, "titleWeight": 0.2, "maxChunkTokens": 256, "overlapTokens": 32, "minTokens": 8, "excludeFolders": [], "excludeTags": [], "includeCode": false, "dateProperty": "", "workers": 1 } }
 ```
 
-- `version` (integer): schema version. Missing means version 0, migrated to 1 with the fields kept.
+- `version` (integer): schema version. Missing means version 0, migrated to 1 with the fields kept; version 1 is migrated to 2 by adding `index` with its defaults.
 - A version newer than the installed plugin is read but never overwritten, so a downgrade does not destroy settings.
 - A field of the wrong type is replaced by its default, and the corrected file is saved.
 - When `data.json` changes on disk (for example after a sync), the settings are reloaded.

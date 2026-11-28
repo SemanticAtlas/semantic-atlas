@@ -14,4 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Versioned settings with migrations; settings saved by a newer release are used but never overwritten; reload on external change (sync).
 - Debug mode setting: the console stays silent except for errors unless it is enabled.
 - English and French interface, chosen from Obsidian's language.
+- Semantic index (see `docs/SEMANTIC-INDEX.md`):
+  - the embedding model is downloaded only after the user agreed (dialog with source, size and license; ranges; SHA-256 checked), or imported from files;
+  - indexing runs in a background worker, incrementally by content hash, active note first, and can be paused;
+  - vectors are kept in IndexedDB on the device;
+  - commands: "Open related notes" (sidebar view with passages, drag to insert a link, hide already linked notes, copy as links, pause), "Search by meaning" (hybrid BM25 + vectors with rank fusion), "Open a random close note", "Pause indexing" / "Resume indexing", "Clear all data of the plugin";
+  - index settings (version 2, migrated): title weight, passage length, excluded folders and tags, code blocks, mobile;
+  - status bar progress;
+  - tested in Obsidian 1.15.1 with 516 notes.
 - Link graph view (commands "Open link graph" and "Open local link graph"): explicit links, embeds and front-matter links from the metadata cache. It is laid out by the Semantic Atlas engine (WebAssembly, embedded) and offers a local graph by depth, optional ghost notes for links to notes not created yet, an accessible table of links, keyboard navigation and theme colours. The view state is saved. See `docs/LINK-GRAPH.md`. Tested in Obsidian 1.15.1 (desktop, light and dark themes, plugin reload).

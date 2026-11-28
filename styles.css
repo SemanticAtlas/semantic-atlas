@@ -135,3 +135,74 @@
 .semantic-atlas-relations .sa-relations-list button:focus-visible {
 	outline: 2px solid var(--interactive-accent);
 }
+
+/* Semantic index: model dialog, related notes, search. */
+.semantic-atlas-model-table {
+	border-collapse: collapse;
+	margin: var(--size-4-2) 0;
+}
+
+.semantic-atlas-model-table th {
+	text-align: start;
+	padding: var(--size-2-1) var(--size-4-3) var(--size-2-1) 0;
+	color: var(--text-muted);
+	font-weight: var(--font-normal);
+}
+
+.semantic-atlas-progress {
+	width: 100%;
+}
+
+.semantic-atlas-related {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-2);
+}
+
+.semantic-atlas-related-items {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-3);
+}
+
+.semantic-atlas-related-title {
+	font-weight: var(--font-semibold);
+	cursor: grab;
+}
+
+.semantic-atlas-related-meta {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-2);
+	color: var(--text-faint);
+	font-size: var(--font-ui-smaller);
+}
+
+.semantic-atlas-score {
+	width: 4em;
+	height: 0.5em;
+}
+
+.semantic-atlas-related-excerpt,
+.semantic-atlas-suggestion-excerpt {
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+}
+
+.semantic-atlas-suggestion-title {
+	font-weight: var(--font-semibold);
+}
+
+.semantic-atlas-suggestion-path {
+	color: var(--text-faint);
+	font-size: var(--font-ui-smaller);
+}
+
+.semantic-atlas-hint {
+	margin: 0;
+	color: var(--text-faint);
+	font-size: var(--font-ui-smaller);
+}

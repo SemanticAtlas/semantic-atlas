@@ -12,12 +12,12 @@ interface Position {
 
 /** The parts of Obsidian's `CachedMetadata` used here. */
 export interface CacheLike {
-	frontmatterPosition?: Position;
-	frontmatter?: Record<string, unknown>;
-	sections?: { type: string; position: Position; id?: string }[];
-	headings?: { heading: string; level: number; position: Position }[];
-	links?: { link: string; displayText?: string; original: string; position: Position }[];
-	embeds?: { link: string; displayText?: string; original: string; position: Position }[];
+	frontmatterPosition?: Position | undefined;
+	frontmatter?: Record<string, unknown> | undefined;
+	sections?: { type: string; position: Position; id?: string | undefined }[] | undefined;
+	headings?: { heading: string; level: number; position: Position }[] | undefined;
+	links?: { link: string; displayText?: string | undefined; original: string; position: Position }[] | undefined;
+	embeds?: { link: string; displayText?: string | undefined; original: string; position: Position }[] | undefined;
 }
 
 export interface NoteMeta {

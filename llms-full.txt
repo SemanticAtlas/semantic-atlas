@@ -13,7 +13,11 @@ Map your Obsidian vault by meaning, not only by links:
 
 Everything is computed on your device. By default, no data leaves it.
 
-> **Status: early development.** Available today: the [link graph](docs/LINK-GRAPH.md) (global or local, with notes not created yet as an option). The features based on meaning (semantic index, related notes, search, themes, missing links) are not available yet. See [the specification](docs/SPEC.md) and the [changelog](CHANGELOG.md).
+> **Status: early development.** Available today:
+> - the [link graph](docs/LINK-GRAPH.md), global or local, with notes not created yet as an option;
+> - the [semantic index](docs/SEMANTIC-INDEX.md): related notes, search by meaning, random close note.
+>
+> Themes, maps and missing links are not available yet. See [the specification](docs/SPEC.md) and the [changelog](CHANGELOG.md).
 
 ## Installation
 
@@ -23,14 +27,20 @@ Not yet published in the community directory. To try a development build, copy `
 
 | Capability | Current version | Planned |
 |---|---|---|
-| Network | None. | Download of the embedding model from Hugging Face, **only after you click and confirm**; the address, size and license are shown first, the version is fixed and its SHA-256 checked. Optional external providers (OpenAI-compatible endpoint, Ollama), off by default. The model can also be imported from a file, with no network at all. |
-| File system | Reads notes' links from Obsidian's metadata cache. Writes only the plugin settings (`data.json`). Creates a note only when you open a note that does not exist yet from the link graph, as clicking an unresolved link does. | Reads notes through the Obsidian API; changes a note only after an explicit action of yours; optional index snapshot in a visible folder of the vault; index cache in IndexedDB on the device. Nothing outside the vault. |
-| Clipboard | None. | Writes only when you choose "copy" (list of links, context for an assistant). Never reads it. |
-| Other capabilities | WebAssembly (the Semantic Atlas engine, embedded in `main.js`) and a canvas for the link graph. | Web Workers and WebAssembly bundled in `main.js`; WebGL for maps. |
+| Network | Only to download the embedding model, **once, after you click and confirm**. The files come from `github.com` (release `granite-r2-q8_0-v1` of SemanticAtlas/semantic-atlas-models), which redirects to `release-assets.githubusercontent.com`. The address, size and license are shown first, the version is fixed, and each file's SHA-256 is checked. Nothing about your notes is sent. The model can also be imported from files, with no network at all. | Optional external providers (OpenAI-compatible endpoint, Ollama), off by default. |
+| File system | Reads notes through Obsidian (cached content and metadata cache). Writes only the plugin settings (`data.json`). The model and the index are kept in the app's IndexedDB on this device, outside the vault. Creates a note only when you open a note that does not exist yet from the link graph, as clicking an unresolved link does. | Reads notes through the Obsidian API; changes a note only after an explicit action of yours; optional index snapshot in a visible folder of the vault; index cache in IndexedDB on the device. Nothing outside the vault. |
+| Clipboard | Writes only when you click **Copy as links** in Related notes. Never reads it. | Writes only when you choose "copy" (list of links, context for an assistant). Never reads it. |
+| Other capabilities | WebAssembly (the Semantic Atlas engine and its embedding module, embedded in `main.js`), a background Web Worker for embeddings, IndexedDB, and a canvas for the link graph. | Web Workers and WebAssembly bundled in `main.js`; WebGL for maps. |
 
 ## Credits
 
-The link graph uses [@semanticatlas/core](https://github.com/SemanticAtlas/semantic-atlas-core) and [@semanticatlas/engine](https://github.com/SemanticAtlas/semantic-atlas-engine) (MIT, same author), bundled in `main.js`.
+Bundled in `main.js`:
+
+- [@semanticatlas/core](https://github.com/SemanticAtlas/semantic-atlas-core) and [@semanticatlas/engine](https://github.com/SemanticAtlas/semantic-atlas-engine) (MIT, same author). The engine's embedding module uses [Candle](https://github.com/huggingface/candle) (MIT or Apache-2.0).
+- [@huggingface/tokenizers](https://github.com/huggingface/tokenizers.js) (Apache-2.0).
+- [MiniSearch](https://github.com/lucaong/minisearch) (MIT).
+
+Downloaded on request: [granite-embedding-97m-multilingual-r2](https://huggingface.co/ibm-granite/granite-embedding-97m-multilingual-r2), Copyright IBM Corp., Apache-2.0. It is converted to GGUF Q8_0 by Semantic Atlas; see the release's NOTICE.
 
 ## Privacy
 
@@ -71,6 +81,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Versioned settings with migrations; settings saved by a newer release are used but never overwritten; reload on external change (sync).
 - Debug mode setting: the console stays silent except for errors unless it is enabled.
 - English and French interface, chosen from Obsidian's language.
+- Semantic index (see `docs/SEMANTIC-INDEX.md`):
+  - the embedding model is downloaded only after the user agreed (dialog with source, size and license; ranges; SHA-256 checked), or imported from files;
+  - indexing runs in a background worker, incrementally by content hash, active note first, and can be paused;
+  - vectors are kept in IndexedDB on the device;
+  - commands: "Open related notes" (sidebar view with passages, drag to insert a link, hide already linked notes, copy as links, pause), "Search by meaning" (hybrid BM25 + vectors with rank fusion), "Open a random close note", "Pause indexing" / "Resume indexing", "Clear all data of the plugin";
+  - index settings (version 2, migrated): title weight, passage length, excluded folders and tags, code blocks, mobile;
+  - status bar progress;
+  - tested in Obsidian 1.15.1 with 516 notes.
 - Link graph view (commands "Open link graph" and "Open local link graph"): explicit links, embeds and front-matter links from the metadata cache. It is laid out by the Semantic Atlas engine (WebAssembly, embedded) and offers a local graph by depth, optional ghost notes for links to notes not created yet, an accessible table of links, keyboard navigation and theme colours. The view state is saved. See `docs/LINK-GRAPH.md`. Tested in Obsidian 1.15.1 (desktop, light and dark themes, plugin reload).
 
 
@@ -102,16 +120,22 @@ This page describes the code as it is. The target architecture is in [SPEC.md, s
 | `src/adapter/collect.ts` | Notes and references to the neutral graph data (edges counted by target, kind and syntax) | no |
 | `src/adapter/vault.ts` | Reads links, embeds and front-matter links from `metadataCache`; link resolver | yes |
 | `src/views/relations.ts` | Link graph view (`ItemView`), state saved with `getState`/`setState` | yes |
+| `src/adapter/note-input.ts` | Note content + metadata cache to the core's `NoteInput` (offsets without front matter, sections, link spans, dates) | no |
+| `src/indexing/plan.ts` | Exclusions, order of work, settings hash | no |
+| `src/indexing/service.ts` | Semantic index: model download (requestUrl with Range), embedding worker, incremental indexing, search, related notes | yes |
+| `src/views/related.ts`, `search-modal.ts`, `model-modal.ts` | Related notes view, search, model and clear-data dialogs | yes |
+
+The embedding worker (`@semanticatlas/core/embed-worker`) is bundled on its own by esbuild, inlined in `main.js` as text and started from a blob URL. The engine's `embed.wasm` is embedded (esbuild `binary` loader) and handed to the worker. The model files come from IndexedDB.
 
 The link graph uses `RelationsView` from `@semanticatlas/core`. The engine's WebAssembly module is embedded in `main.js` (esbuild `binary` loader) and loaded on first use, not at start-up. Both packages are git dependencies pinned to their distribution tags.
 
 ## Settings format (`data.json`)
 
 ```json
-{ "version": 1, "debug": false }
+{ "version": 2, "debug": false, "index": { "enabled": false, "onMobile": false, "titleWeight": 0.2, "maxChunkTokens": 256, "overlapTokens": 32, "minTokens": 8, "excludeFolders": [], "excludeTags": [], "includeCode": false, "dateProperty": "", "workers": 1 } }
 ```
 
-- `version` (integer): schema version. Missing means version 0, migrated to 1 with the fields kept.
+- `version` (integer): schema version. Missing means version 0, migrated to 1 with the fields kept; version 1 is migrated to 2 by adding `index` with its defaults.
 - A version newer than the installed plugin is read but never overwritten, so a downgrade does not destroy settings.
 - A field of the wrong type is replaced by its default, and the corrected file is saved.
 - When `data.json` changes on disk (for example after a sync), the settings are reloaded.
@@ -196,6 +220,62 @@ In Obsidian 1.15.1 (desktop, Linux) on a generated test vault: global and local 
 Every measure shown by Semantic Atlas has an entry here: definition, layer used, complexity, validity limit and reference. A measure without an entry must not be displayed.
 
 No measure is implemented yet. The planned measures and their acceptance thresholds are listed in [SPEC.md, section 8](SPEC.md#8-plan-dévaluation).
+
+
+<!-- docs/SEMANTIC-INDEX.md -->
+
+# Semantic index
+
+The semantic index finds notes by their meaning, in French and English alike. It runs on your device with a local embedding model: your notes never leave it.
+
+## Set it up
+
+1. Run **Set up the semantic index**, or turn on **Index this vault** in the settings.
+2. A dialog shows the model (granite-embedding-97m-multilingual-r2 by IBM, Apache-2.0), its size (128.9 MB), where it comes from (release `granite-r2-q8_0-v1` of [SemanticAtlas/semantic-atlas-models](https://github.com/SemanticAtlas/semantic-atlas-models)) and where it is kept.
+3. **Download and index** downloads the three files of the model in ranges, checks their SHA-256, keeps them on this device, then indexes the vault. Without network, **Import files…** accepts the same three files downloaded elsewhere; they are recognised by their SHA-256.
+
+Nothing is downloaded before you click. The model is never updated silently: a new model can only come with a new version of the plugin, and you choose whether to download it.
+
+## Use it
+
+| Command | What it does |
+|---|---|
+| **Open related notes** | Sidebar view: the notes closest in meaning to the active note, with the passage that makes them close. |
+| **Search by meaning** | Search all notes by meaning and words together. Results show the best passage. |
+| **Open a random close note** | Opens one of the 10 notes closest to the active note. |
+| **Pause indexing** / **Resume indexing** | Stops or restarts the background work. |
+| **Clear all data of the plugin** | Deletes this vault's index, and optionally the model, from this device. |
+
+In **Related notes**:
+
+- drag a title into the editor to insert a link, in your link format;
+- **Hide notes already linked** leaves out the notes linked from or to the active note;
+- the copy button copies the list as links;
+- the pause button stops following the active note.
+
+The score is the cosine similarity between notes. It ranks the results of one note, but it has no absolute meaning and is not comparable from one note to another.
+
+## How it works
+
+- **Text**: each note is read through Obsidian (the cached content and metadata cache). The front matter is dropped. Code blocks and embedded queries (Dataview, Tasks, Bases) are left out; links are replaced by their displayed text.
+- **Passages**: the text is cut at headings into passages of up to 256 tokens, with an overlap of 32. Each passage carries its heading path.
+- **Note vector**: the passages and the title (with aliases) are embedded by the model in a background worker. A note's vector is 20 % title and 80 % the mean of its passages, weighted by length.
+- **Incremental**: notes are re-indexed when their content changes (content hash, two seconds after the last change), renamed or deleted. The active note goes first, then the most recently modified.
+- **Search**: passages by meaning and words (BM25, accents folded, French and English stop words), merged by rank (reciprocal rank fusion).
+- **Storage**: vectors are kept in IndexedDB on this device. They are not in your vault and not synced. Changing the passage length, the title weight or the code-block option rebuilds the index.
+
+## Measured
+
+- **Indexing**: in Obsidian 1.15.1 (Linux, one core for the worker), 480 Wikipedia introductions in French and English (about 185 words each) took about 4 minutes, roughly 2 notes per second.
+- **Reload**: after a reload, the index was ready in 2.2 s without recomputing anything.
+- **Model quality**: see spike S2 in [semantic-atlas-core](https://github.com/SemanticAtlas/semantic-atlas-core/tree/main/spikes/s2-quality). The model is close to blind to language: a French note and an English note on the same subject are neighbours.
+
+## Limits of this version
+
+- Indexing a large vault takes time: about 2 notes per second, so 20,000 notes take hours. It runs in the background and can be paused.
+- **Mobile**: off by default (memory and battery). The index of a desktop is not shared with the phone yet.
+- **Related notes view**: pinning or hiding a result is not available yet.
+- **Search**: no stemming yet.
 
 
 <!-- docs/SPEC.md -->

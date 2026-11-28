@@ -11,6 +11,29 @@ Semantic Atlas - bundled file, see the source at https://github.com/SemanticAtla
 
 const prod = process.argv[2] === 'production';
 
+// The embedding worker (from @semanticatlas/core) is bundled on its own, then inlined in main.js
+// as source text and started from a blob URL: Obsidian installs a single main.js.
+const embedWorker = {
+	name: 'embed-worker',
+	setup(build) {
+		build.onResolve({ filter: /^virtual:embed-worker$/ }, () => ({ path: 'embed-worker', namespace: 'embed-worker' }));
+		build.onLoad({ filter: /.*/, namespace: 'embed-worker' }, async () => {
+			const result = await esbuild.build({
+				entryPoints: ['@semanticatlas/core/embed-worker'],
+				bundle: true,
+				format: 'iife',
+				platform: 'browser',
+				target: 'es2021',
+				minify: prod,
+				write: false,
+				legalComments: 'eof',
+				logLevel: 'warning',
+			});
+			return { contents: `export default ${JSON.stringify(result.outputFiles[0].text)};`, loader: 'js' };
+		});
+	},
+};
+
 const context = await esbuild.context({
 	banner: { js: banner },
 	entryPoints: ['src/main.ts'],
@@ -38,6 +61,7 @@ const context = await esbuild.context({
 	treeShaking: true,
 	// The compute engine (WebAssembly) is embedded in main.js: nothing is downloaded.
 	loader: { '.wasm': 'binary' },
+	plugins: [embedWorker],
 	legalComments: prod ? 'eof' : 'inline',
 	outfile: 'main.js',
 	minify: prod,
