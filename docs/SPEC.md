@@ -340,7 +340,16 @@ Rapports complets : `semantic-atlas-core/spikes/s1-inference/{candle,ort-reduced
 - il est le seul à rendre granite utilisable à environ 100 Mo ;
 - il garde une seule chaîne de build, celle du moteur (D13).
 
-**Ce qui reste à faire** :
+**Mise à jour du 2026-11-28 (moteur 0.2.0)** :
+- Candle est intégré au moteur sous la forme d'un module séparé, `embed.wasm` : 270 Ko compressé, aucun import, build reproductible. `engine.wasm` n'a pas changé.
+- Le noyau Q8_0 × Q8 en SIMD WebAssembly est écrit. Mesures sur un cœur, Node 24 :
+  - **e5-small : 708 jetons/s**, cosinus minimal 0,99982 contre fp32 ;
+  - **granite-r2 : 640 jetons/s** (cible de 700 manquée de 9 %), cosinus minimal 0,99958 (marge fine sur 30 textes).
+- Mémoire WebAssembly : 135 Mo (e5) et 120 Mo (granite).
+- Le noyau occupe 68 à 81 % du temps de granite. Sans produit scalaire 8 bits natif (le SIMD « relaxé » de WebAssembly n'est pas utilisable partout), granite plafonnerait vers 800 jetons/s.
+- Le choix entre e5 et granite (D5) attend toujours le banc de qualité S2.
+
+**Ce qui reste à faire (avant la mise à jour ci-dessus)** :
 - **Vitesse.** Écrire un noyau de multiplication Q8_0 × Q8 en SIMD WebAssembly dans le moteur. Le Q8_0 complet de Candle est exact (≥ 0,9997) mais 1,5 à 2,5 fois plus lent que le f32, faute de noyau optimisé pour WebAssembly. Cible : ≥ 700 jetons/s par cœur, soit la vitesse d'ONNX Runtime avec l'exactitude du Q8_0.
 - **Hébergement des fichiers Q8_0** : nos conversions doivent être publiées avec une empreinte figée (voir D6).
 - **Repli.** Si le noyau n'atteint pas la cible, la build ONNX Runtime « minimal » reste documentée et mesurée.
